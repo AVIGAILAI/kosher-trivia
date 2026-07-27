@@ -112,7 +112,13 @@ class TriviaGame {
       }
     } else if (action === 'skip' && this.phase === 'question') {
       this.reveal();
-    } else if (action === 'restart') {
+    } else if (action === 'prev') {
+      // חזרה לשאלה הקודמת (בזמן שאלה / חשיפה / טבלה)
+      if (this.currentIdx > 0 && (this.phase === 'question' || this.phase === 'reveal' || this.phase === 'leaderboard')) {
+        this.loadQuestion(this.currentIdx - 1);
+      }
+    } else if (action === 'restart' || action === 'stop') {
+      // עצירת המשחק וחזרה למסך הראשי (הלובי)
       this.clearTimer();
       this.phase = 'lobby';
       this.currentIdx = -1;
@@ -172,8 +178,17 @@ class TriviaGame {
       view.numOptions = q ? q.options.length : 4;
       view.hasAnswered = !!ans;
       view.myAnswer = ans ? ans.value : null;
+      if (q) {
+        view.category = q.category;
+        view.questionText = q.text;
+        view.options = q.options;
+        view.questionNumber = this.currentIdx + 1;
+        view.totalQuestions = this.questions.length;
+      }
     } else if (this.phase === 'reveal') {
       view.correct = q.correct;
+      view.correctText = q ? q.options[q.correct] : '';
+      view.options = q ? q.options : [];
       view.myAnswer = ans ? ans.value : null;
       view.wasCorrect = ans ? ans.value === q.correct : false;
       view.didAnswer = !!ans;
