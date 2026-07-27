@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>טריוויה — שלט שחקן</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family:'Rubik',sans-serif; background:linear-gradient(135deg,#06D6A0 0%,#118AB2 50%,#073B4C 100%); min-height:100vh; user-select:none; }
+    .glass { background:rgba(255,255,255,.92); backdrop-filter:blur(12px); box-shadow:0 20px 40px rgba(0,0,0,.15); }
+    .opt-a{background:#EF476F}.opt-b{background:#118AB2}.opt-c{background:#FFD166;color:#073B4C}.opt-d{background:#06D6A0}
+    .opt-btn{transition:transform .1s} .opt-btn:active{transform:scale(.95)}
+  </style>
+</head>
+<body class="p-4 flex flex-col min-h-screen">
+  <div class="max-w-md w-full mx-auto flex-1 flex flex-col justify-center">
+
+    <!-- התחברות -->
+    <div id="view-login" class="glass rounded-3xl p-8 text-center">
+      <div class="text-5xl mb-3">📱</div>
+      <h2 class="text-3xl font-black mb-2">התחברות למשחק</h2>
+      <p class="text-gray-600 text-sm font-bold mb-6">הזינו את הקוד המוצג על המסך הראשי</p>
+      <div class="space-y-4 text-right">
+        <div>
+          <label class="block text-xs font-extrabold text-gray-700 mb-1">קוד משחק (PIN):</label>
+          <input id="inPin" type="tel" inputmode="numeric" placeholder="1234" class="w-full px-4 py-3 rounded-xl border-2 border-gray-300 text-center font-black text-2xl focus:border-sky-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-extrabold text-gray-700 mb-1">שם / כינוי:</label>
+          <input id="inName" type="text" maxlength="20" placeholder="השם שלך" class="w-full px-4 py-3 rounded-xl border-2 border-gray-300 text-center font-bold text-xl focus:border-sky-500 outline-none" />
+        </div>
+        <p id="loginError" class="text-rose-600 font-bold text-sm hidden"></p>
+        <button id="btnJoin" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-black text-xl py-4 rounded-xl shadow-lg">התחבר למשחק 🚀</button>
+      </div>
+    </div>
+
+    <!-- המתנה -->
+    <div id="view-waiting" class="hidden glass rounded-3xl p-8 text-center">
+      <div class="text-6xl mb-4">⏳</div>
+      <h3 class="text-2xl font-black mb-2">אתם בפנים!</h3>
+      <p id="greeting" class="text-sky-700 font-extrabold text-xl mb-6">שלום, שחקן</p>
+      <div class="bg-yellow-100 p-4 rounded-2xl text-sm font-bold animate-pulse">ממתינים שהמנחה יתחיל את המשחק...</div>
+    </div>
+
+    <!-- כפתורי תשובה -->
+    <div id="view-answer" class="hidden">
+      <div class="bg-white/30 backdrop-blur px-6 py-3 rounded-2xl text-white font-black text-center mb-6">בחרו את התשובה שלכם:</div>
+      <div class="grid grid-cols-2 gap-4 h-80">
+        <button data-opt="0" class="opt-btn opt-a text-white font-black text-4xl rounded-3xl shadow-xl border-4 border-white/50">1</button>
+        <button data-opt="1" class="opt-btn opt-b text-white font-black text-4xl rounded-3xl shadow-xl border-4 border-white/50">2</button>
+        <button data-opt="2" class="opt-btn opt-c font-black text-4xl rounded-3xl shadow-xl border-4 border-white/50">3</button>
+        <button data-opt="3" class="opt-btn opt-d text-white font-black text-4xl rounded-3xl shadow-xl border-4 border-white/50">4</button>
+      </div>
+    </div>
+
+    <!-- תשובה נשלחה -->
+    <div id="view-submitted" class="hidden glass rounded-3xl p-8 text-center">
+      <div class="text-6xl mb-4">👍</div>
+      <h3 class="text-3xl font-black mb-2">תשובתך נקלטה!</h3>
+      <p class="text-gray-600 font-bold">ממתינים לתוצאות במסך הראשי</p>
+    </div>
+
+    <!-- משוב חשיפה -->
+    <div id="view-feedback" class="hidden glass rounded-3xl p-8 text-center">
+      <div id="fbEmoji" class="text-6xl mb-4">🎉</div>
+      <h3 id="fbTitle" class="text-3xl font-black mb-2">כל הכבוד!</h3>
+      <p id="fbScore" class="text-sky-700 font-extrabold text-xl">הניקוד שלך: 0</p>
+    </div>
+
+    <!-- סיום -->
+    <div id="view-done" class="hidden glass rounded-3xl p-8 text-center">
+      <div class="text-6xl mb-4">🏁</div>
+      <h3 class="text-3xl font-black mb-2">המשחק הסתיים!</h3>
+      <p id="doneText" class="text-sky-700 font-extrabold text-xl">תודה שהשתתפת</p>
+    </div>
+
+  </div>
+
+  <script>
+    const socket = io();
+    let joined = false;
+    const views = ['login','waiting','answer','submitted','feedback','done'];
+    function show(v){ views.forEach(x => document.getElementById('view-'+x).classList.toggle('hidden', x!==v)); }
+
+    // מילוי PIN מה-URL (סריקת QR)
+    const urlPin = new URLSearchParams(location.search).get('pin');
+    if(urlPin) document.getElementById('inPin').value = urlPin;
+
+    document.getElementById('btnJoin').onclick = join;
+    document.getElementById('inName').addEventListener('keydown', e => { if(e.key==='Enter') join(); });
+
+    function join(){
+      const pin = document.getElementById('inPin').value.trim();
+      const name = document.getElementById('inName').value.trim();
+      const err = document.getElementById('loginError');
+      if(!pin || !name){ err.innerText='נא למלא קוד ושם'; err.classList.remove('hidden'); return; }
+      socket.emit('player:join', { pin, name }, (res) => {
+        if(!res || !res.ok){ err.innerText = (res && res.error) || 'שגיאת התחברות'; err.classList.remove('hidden'); return; }
+        joined = true;
+        err.classList.add('hidden');
+        document.getElementById('greeting').innerText = `שלום, ${res.name}! 👋`;
+        renderView(res.view);
+      });
+    }
+
+    document.querySelectorAll('#view-answer button').forEach(btn => {
+      btn.onclick = () => {
+        socket.emit('player:answer', { value: Number(btn.dataset.opt) });
+        show('submitted');
+      };
+    });
+
+    socket.on('player:state', (state) => { if(joined && state) renderView(state.view); });
+
+    function renderView(view){
+      if(!view) return;
+      const phase = view.phase;
+      if(phase === 'lobby'){ show('waiting'); return; }
+      if(phase === 'question'){
+        if(view.hasAnswered) show('submitted'); else show('answer');
+        return;
+      }
+      if(phase === 'reveal'){
+        const emoji = document.getElementById('fbEmoji');
+        const title = document.getElementById('fbTitle');
+        if(!view.didAnswer){ emoji.innerText='😐'; title.innerText='לא ענית הפעם'; }
+        else if(view.wasCorrect){ emoji.innerText='🎉'; title.innerText='כל הכבוד, נכון!'; }
+        else { emoji.innerText='😅'; title.innerText='טעית הפעם'; }
+        document.getElementById('fbScore').innerText = 'הניקוד שלך: ' + view.score + ' נק\'';
+        show('feedback');
+        return;
+      }
+      if(phase === 'leaderboard'){
+        document.getElementById('fbEmoji').innerText='📊';
+        document.getElementById('fbTitle').innerText='ממתינים לשאלה הבאה';
+        document.getElementById('fbScore').innerText = 'הניקוד שלך: ' + view.score + ' נק\'';
+        show('feedback');
+        return;
+      }
+      if(phase === 'final'){
+        document.getElementById('doneText').innerText = `סיימת במקום ${view.rank} עם ${view.score} נקודות 🎊`;
+        show('done');
+        return;
+      }
+    }
+  </script>
+</body>
+</html>

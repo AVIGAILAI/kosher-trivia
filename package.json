@@ -1,0 +1,30 @@
+{
+  "name": "kosher-trivia",
+  "version": "0.1.0",
+  "description": "מערכת טריוויה קבוצתית עם גישה לפלאפונים כשרים דרך שיחת טלפון והקשת מקשים",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "keywords": [
+    "trivia",
+    "kahoot",
+    "kosher-phone",
+    "ivr",
+    "hebrew"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "cloudflared": "^0.7.1",
+    "socket.io-client": "^4.8.3"
+  }
+}

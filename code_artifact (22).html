@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>טריוויה קייצית קבוצתית - TriviaSummer Live</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.com/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        rubik: ['Rubik', 'sans-serif'],
+                    },
+                    colors: {
+                        summerYellow: '#FFD166',
+                        summerCyan: '#06D6A0',
+                        summerBlue: '#118AB2',
+                        summerDarkBlue: '#073B4C',
+                        summerCoral: '#EF476F',
+                        summerOrange: '#F78C6B'
+                    },
+                    animation: {
+                        'float': 'float 4s ease-in-out infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'bounce-short': 'bounce 0.8s ease-in-out 2',
+                        'wave': 'wave 10s linear infinite'
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px) rotate(0deg)' },
+                            '50%': { transform: 'translateY(-12px) rotate(3deg)' }
+                        },
+                        wave: {
+                            '0%': { transform: 'translateX(0)' },
+                            '100%': { transform: 'translateX(-50%)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            font-family: 'Rubik', sans-serif;
+            background: linear-gradient(135deg, #06D6A0 0%, #118AB2 50%, #073B4C 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+            user-select: none;
+        }
+        
+        .sun-rays {
+            background: radial-gradient(circle, rgba(255,209,102,0.4) 0%, rgba(255,255,255,0) 70%);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .glass-card-dark {
+            background: rgba(7, 59, 76, 0.88);
+            backdrop-filter: blur(12px);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .option-btn {
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .option-btn:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .option-btn:active {
+            transform: translateY(2px) scale(0.98);
+        }
+
+        /* Summer Background Animated Elements */
+        .bubble {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            pointer-events: none;
+            animation: floatUp 8s infinite ease-in;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(100vh) scale(0.5); opacity: 0; }
+            50% { opacity: 0.8; }
+            100% { transform: translateY(-10vh) scale(1.2); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="text-summerDarkBlue flex flex-col justify-between min-h-screen relative overflow-hidden">
+
+    <div id="bubblesContainer" class="absolute inset-0 pointer-events-none z-0"></div>
+
+    <!-- Header Navigation Bar -->
+    <header class="relative z-10 w-full px-6 py-4 flex justify-between items-center bg-white/20 backdrop-blur-md border-b border-white/30">
+        <div class="flex items-center space-x-3 space-x-reverse">
+            <div class="w-12 h-12 bg-summerYellow rounded-2xl flex items-center justify-center text-2xl shadow-lg transform rotate-3">
+                ☀️
+            </div>
+            <div>
+                <h1 class="text-2xl font-black text-white tracking-wide drop-shadow-md">קייציQuiz</h1>
+                <p class="text-xs text-yellow-200 font-semibold">טריוויה קבוצתית קייצית ומרעננת</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-3 space-x-reverse">
+            <button id="soundToggleBtn" onclick="toggleSound()" class="bg-white/80 hover:bg-white text-summerDarkBlue font-bold px-3 py-2 rounded-xl text-sm transition flex items-center gap-1 shadow">
+                🔊 שמע: פעיל
+            </button>
+            <button id="roleSwitchBtn" onclick="toggleRoleModal()" class="bg-summerYellow hover:bg-yellow-300 text-summerDarkBlue font-black px-4 py-2 rounded-xl text-sm transition shadow-md">
+                🔄 החלף מצב (מנחה / שחקן)
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER FOR HOST MODE -->
+    <main id="hostContainer" class="relative z-10 container mx-auto px-4 py-6 flex-1 flex flex-col justify-center items-center">
+
+        <!-- HOST VIEW 1: LOBBY & SETUP -->
+        <section id="hostLobbyView" class="w-full max-w-5xl flex flex-col items-center">
+            <div class="glass-card rounded-3xl p-8 w-full text-center relative overflow-hidden border-4 border-summerYellow/50">
+                <div class="inline-block bg-summerCoral text-white px-6 py-2 rounded-full font-bold text-sm tracking-widest uppercase mb-4 shadow">
+                    קיץ מרענן של ידע כללי
+                </div>
+                <h2 class="text-4xl md:text-5xl font-black text-summerDarkBlue mb-3">ברוכים הבאים למשחק הטריוויה!</h2>
+                <p class="text-lg text-gray-700 font-medium mb-8">סרקו את הברקוד או היכנסו דרך הטלפון עם הקוד המוצג מטה</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center bg-white/60 rounded-2xl p-6 border border-white/80 shadow-inner">
+                    <!-- QR Code Box -->
+                    <div class="flex flex-col items-center border-b md:border-b-0 md:border-l border-gray-300 pb-6 md:pb-0 md:pl-6">
+                        <div id="qrcode" class="p-3 bg-white rounded-2xl shadow-md border border-gray-200"></div>
+                        <span class="text-xs text-gray-500 font-bold mt-3">סרקו ישירות במצלמת הנייד</span>
+                    </div>
+
+                    <!-- PIN & Player Stats -->
+                    <div class="flex flex-col items-center justify-center">
+                        <span class="text-gray-600 font-bold text-sm mb-1">קוד המשחק (PIN):</span>
+                        <div id="gamePinDisplay" class="text-6xl font-black text-summerBlue tracking-widest bg-yellow-100 px-8 py-3 rounded-2xl border-2 border-summerYellow shadow-sm mb-4">
+                            ----
+                        </div>
+                        
+                        <div class="flex items-center gap-3">
+                            <span class="text-xl font-extrabold text-summerDarkBlue">משתתפים מחוברים:</span>
+                            <span id="playerCountBadge" class="bg-summerCoral text-white text-2xl font-black px-4 py-1 rounded-full shadow animate-bounce-short">
+                                0
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Joined Players Floating List -->
+                <div class="mt-8">
+                    <div class="flex justify-between items-center mb-3 px-2">
+                        <span class="font-bold text-gray-700 text-sm">רשימת משתתפים בחדר:</span>
+                        <button onclick="simulatePlayers(50)" class="text-xs bg-summerBlue hover:bg-sky-700 text-white font-bold px-3 py-1.5 rounded-lg transition shadow">
+                            ⚡ הדמה 50 שחקנים למבחן
+                        </button>
+                    </div>
+                    <div id="playersGrid" class="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-3 bg-white/40 rounded-xl border border-white/60 justify-center">
+                        <p id="noPlayersText" class="text-gray-500 font-medium text-sm my-4">ממתין להתחברות המשתתפים...</p>
+                    </div>
+                </div>
+
+                <!-- Start Action Bar -->
+                <div class="mt-8 flex flex-wrap gap-4 justify-center">
+                    <button id="startGameBtn" onclick="startTriviaGame()" class="bg-summerCyan hover:bg-emerald-500 text-white font-black text-2xl px-12 py-4 rounded-2xl shadow-xl transition transform hover:scale-105 active:scale-95 flex items-center gap-3">
+                        <span>התחל משחק עכשיו</span> 🚀
+                    </button>
+                    <button onclick="openEditorModal()" class="bg-white hover:bg-gray-100 text-summerDarkBlue font-bold text-lg px-6 py-4 rounded-2xl shadow transition border border-gray-300">
+                        ⚙️ ערוך שאלות
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- HOST VIEW 2: ACTIVE QUESTION SCREEN -->
+        <section id="hostQuestionView" class="w-full max-w-5xl hidden flex-col items-center">
+            <!-- Progress & Timer Bar -->
+            <div class="w-full flex justify-between items-center mb-4 px-2 text-white font-bold">
+                <span id="questionProgressText" class="text-xl bg-black/30 px-4 py-2 rounded-xl backdrop-blur-sm">שאלה 1 מתוך 8</span>
+                <div id="timerContainer" class="flex items-center gap-2 bg-black/30 px-5 py-2 rounded-xl backdrop-blur-sm">
+                    <span>⏱️ זמן נותר:</span>
+                    <span id="questionTimer" class="text-3xl font-black text-summerYellow">20</span>
+                </div>
+            </div>
+
+            <!-- Question Card -->
+            <div class="glass-card rounded-3xl p-8 w-full text-center relative overflow-hidden border-4 border-white/60 mb-6 shadow-2xl">
+                <div id="categoryBadge" class="inline-block bg-summerBlue text-white px-5 py-1.5 rounded-full font-bold text-xs tracking-wider mb-4">
+                    טבע ומדע
+                </div>
+                <h2 id="questionTextDisplay" class="text-3xl md:text-4xl font-black text-summerDarkBlue leading-relaxed mb-6">
+                    טוען שאלה...
+                </h2>
+
+                <!-- Live Answer Count Indicator -->
+                <div class="w-full bg-gray-200/80 rounded-full h-3 mb-6 overflow-hidden">
+                    <div id="timerProgressBar" class="bg-summerCoral h-full w-full transition-all duration-1000 ease-linear"></div>
+                </div>
+
+                <div class="flex justify-between items-center text-sm font-bold text-gray-600 px-2">
+                    <span>תשובות שנענו: <strong id="answersReceivedCount" class="text-summerBlue font-black text-lg">0</strong> / <span id="totalPlayersInQuestion">0</span></span>
+                    <span id="questionPointsValue" class="text-emerald-600">ניקוד מירבי: 1000</span>
+                </div>
+            </div>
+
+            <!-- Options Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                <div id="optContainer0" class="glass-card p-5 rounded-2xl flex items-center border-l-8 border-summerCoral shadow-lg">
+                    <span class="w-10 h-10 rounded-xl bg-summerCoral text-white font-black text-xl flex items-center justify-center ml-4 shadow">A</span>
+                    <span id="optText0" class="text-xl font-bold text-gray-800">אופציה 1</span>
+                </div>
+                <div id="optContainer1" class="glass-card p-5 rounded-2xl flex items-center border-l-8 border-summerBlue shadow-lg">
+                    <span class="w-10 h-10 rounded-xl bg-summerBlue text-white font-black text-xl flex items-center justify-center ml-4 shadow">B</span>
+                    <span id="optText1" class="text-xl font-bold text-gray-800">אופציה 2</span>
+                </div>
+                <div id="optContainer2" class="glass-card p-5 rounded-2xl flex items-center border-l-8 border-summerYellow shadow-lg">
+                    <span class="w-10 h-10 rounded-xl bg-summerYellow text-summerDarkBlue font-black text-xl flex items-center justify-center ml-4 shadow">C</span>
+                    <span id="optText2" class="text-xl font-bold text-gray-800">אופציה 3</span>
+                </div>
+                <div id="optContainer3" class="glass-card p-5 rounded-2xl flex items-center border-l-8 border-summerCyan shadow-lg">
+                    <span class="w-10 h-10 rounded-xl bg-summerCyan text-white font-black text-xl flex items-center justify-center ml-4 shadow">D</span>
+                    <span id="optText3" class="text-xl font-bold text-gray-800">אופציה 4</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- HOST VIEW 3: REVEAL & LEADERBOARD -->
+        <section id="hostRevealView" class="w-full max-w-4xl hidden flex-col items-center">
+            <div class="glass-card rounded-3xl p-8 w-full text-center relative overflow-hidden shadow-2xl mb-6">
+                <h3 class="text-3xl font-black text-summerDarkBlue mb-2">תוצאות השאלה</h3>
+                <p id="correctAnswerTitle" class="text-xl font-extrabold text-emerald-600 mb-6">התשובה הנכונה היא: ...</p>
+
+                <!-- Stats distribution bars -->
+                <div id="answerDistributionChart" class="grid grid-cols-4 gap-4 h-48 items-end bg-white/50 p-6 rounded-2xl border border-gray-200 mb-6">
+                    <!-- Dynamic Bars injected via JS -->
+                </div>
+
+                <button onclick="showLeaderboard()" class="bg-summerYellow hover:bg-yellow-400 text-summerDarkBlue font-black text-2xl px-10 py-4 rounded-2xl shadow-lg transition transform hover:scale-105">
+                    טבלת מובילים 🏆
+                </button>
+            </div>
+        </section>
+
+        <!-- HOST VIEW 4: LEADERBOARD SCREEN -->
+        <section id="hostLeaderboardView" class="w-full max-w-3xl hidden flex-col items-center">
+            <div class="glass-card rounded-3xl p-8 w-full text-center shadow-2xl">
+                <div class="text-4xl mb-2">🏆</div>
+                <h3 class="text-4xl font-black text-summerDarkBlue mb-6">לוח המובילים</h3>
+
+                <div id="leaderboardList" class="space-y-3 mb-8">
+                    <!-- Top players injected here -->
+                </div>
+
+                <button id="nextQuestionBtn" onclick="nextQuestion()" class="bg-summerCyan hover:bg-emerald-500 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl transition transform hover:scale-105">
+                    לשאלה הבאה ➔
+                </button>
+            </div>
+        </section>
+
+        <!-- HOST VIEW 5: FINAL WINNER CELEBRATION -->
+        <section id="hostFinalView" class="w-full max-w-3xl hidden flex-col items-center text-center">
+            <div class="glass-card rounded-3xl p-10 w-full shadow-2xl border-4 border-summerYellow">
+                <div class="text-6xl mb-4 animate-bounce">👑</div>
+                <h2 class="text-5xl font-black text-summerDarkBlue mb-2">אלופי הטריוויה הקייצית!</h2>
+                <p class="text-gray-600 font-bold mb-8 text-lg">סיום המשחק - כל הכבוד לכל המשתתפים</p>
+
+                <div id="podiumWinners" class="flex justify-center items-end gap-4 mb-8 h-64">
+                    <!-- Podium generated in JS -->
+                </div>
+
+                <button onclick="resetToLobby()" class="bg-summerCoral hover:bg-rose-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl transition transform hover:scale-105">
+                    משחק חדש 🔄
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- PARTICIPANT / MOBILE CONTROLLER VIEW -->
+    <main id="playerContainer" class="relative z-10 container mx-auto px-4 py-6 flex-1 hidden flex-col justify-center items-center">
+        
+        <!-- PLAYER STEP 1: LOGIN / PIN -->
+        <div id="playerLoginView" class="glass-card rounded-3xl p-8 w-full max-w-md text-center shadow-2xl">
+            <div class="text-5xl mb-3">📱</div>
+            <h2 class="text-3xl font-black text-summerDarkBlue mb-2">התחברות למשחק</h2>
+            <p class="text-gray-600 text-sm font-bold mb-6">הזינו את הקוד המוצג על המסך הראשי</p>
+
+            <div class="space-y-4 text-right">
+                <div>
+                    <label class="block text-xs font-extrabold text-gray-700 mb-1">קוד משחק (PIN):</label>
+                    <input type="number" id="inputGamePin" placeholder="לדוגמה: 4821" class="w-full px-4 py-3 rounded-xl border-2 border-gray-300 text-center font-black text-2xl focus:border-summerBlue outline-none transition">
+                </div>
+                <div>
+                    <label class="block text-xs font-extrabold text-gray-700 mb-1">שם המשתתף / כינוי:</label>
+                    <input type="text" id="inputPlayerName" maxlength="15" placeholder="הכנס את שמך" class="w-full px-4 py-3 rounded-xl border-2 border-gray-300 text-center font-bold text-xl focus:border-summerBlue outline-none transition">
+                </div>
+                <button onclick="connectPlayerToHost()" class="w-full bg-summerBlue hover:bg-sky-700 text-white font-black text-xl py-4 rounded-xl shadow-lg transition transform hover:scale-105 mt-2">
+                    התחבר למשחק 🚀
+                </button>
+            </div>
+        </div>
+
+        <!-- PLAYER STEP 2: WAITING LOBBY -->
+        <div id="playerWaitingView" class="glass-card rounded-3xl p-8 w-full max-w-md text-center shadow-2xl hidden">
+            <div class="text-6xl mb-4 animate-float">🏖️</div>
+            <h3 class="text-2xl font-black text-summerDarkBlue mb-2">אתם בפנים!</h3>
+            <p id="playerGreetingText" class="text-summerBlue font-extrabold text-xl mb-6">שלום, שחקן</p>
+            <div class="bg-yellow-100 p-4 rounded-2xl border border-yellow-300 text-summerDarkBlue text-sm font-bold animate-pulse">
+                ממתינים שהמנחה יתחיל את המשחק במסך הראשי...
+            </div>
+        </div>
+
+        <!-- PLAYER STEP 3: ANSWER CONTROLLER BUTTONS -->
+        <div id="playerControllerView" class="w-full max-w-md hidden flex-col items-center">
+            <div class="bg-white/30 backdrop-blur-md px-6 py-3 rounded-2xl text-white font-black text-center mb-6 w-full border border-white/40 shadow">
+                <span id="playerQuestionHeader">בחרו תשובה במסך:</span>
+            </div>
+
+            <!-- Big Easy Mobile Buttons -->
+            <div class="grid grid-cols-2 gap-4 w-full h-80">
+                <button onclick="submitPlayerAnswer(0)" class="option-btn bg-summerCoral hover:bg-rose-600 text-white font-black text-4xl rounded-3xl shadow-xl flex items-center justify-center border-4 border-white/50 active:scale-95">
+                    A
+                </button>
+                <button onclick="submitPlayerAnswer(1)" class="option-btn bg-summerBlue hover:bg-sky-600 text-white font-black text-4xl rounded-3xl shadow-xl flex items-center justify-center border-4 border-white/50 active:scale-95">
+                    B
+                </button>
+                <button onclick="submitPlayerAnswer(2)" class="option-btn bg-summerYellow hover:bg-amber-400 text-summerDarkBlue font-black text-4xl rounded-3xl shadow-xl flex items-center justify-center border-4 border-white/50 active:scale-95">
+                    C
+                </button>
+                <button onclick="submitPlayerAnswer(3)" class="option-btn bg-summerCyan hover:bg-emerald-500 text-white font-black text-4xl rounded-3xl shadow-xl flex items-center justify-center border-4 border-white/50 active:scale-95">
+                    D
+                </button>
+            </div>
+        </div>
+
+        <!-- PLAYER STEP 4: ANSWER SUBMITTED FEEDBACK -->
+        <div id="playerAnswerSubmittedView" class="glass-card rounded-3xl p-8 w-full max-w-md text-center shadow-2xl hidden">
+            <div class="text-6xl mb-4 animate-bounce">👍</div>
+            <h3 class="text-3xl font-black text-summerDarkBlue mb-2">תשובתך נקלטה!</h3>
+            <p class="text-gray-600 font-bold mb-4">ממתינים לסיום הזמן ולתוצאות השאלה במסך הראשי</p>
+        </div>
+
+    </main>
+
+    <!-- MODAL 1: QUESTION EDITOR -->
+    <div id="editorModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-card rounded-3xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl bg-white">
+            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <h3 class="text-2xl font-black text-summerDarkBlue">⚙️ עורך שאלות טריוויה</h3>
+                <button onclick="closeEditorModal()" class="text-gray-500 hover:text-gray-800 text-2xl font-bold">✕</button>
+            </div>
+
+            <div id="questionsEditorList" class="space-y-4 mb-6">
+                <!-- Editable question items rendered via JS -->
+            </div>
+
+            <div class="flex justify-between items-center pt-4 border-t">
+                <button onclick="addNewQuestionToEditor()" class="bg-summerBlue hover:bg-sky-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition">
+                    + הוסף שאלה חדשה
+                </button>
+                <button onclick="saveCustomQuestions()" class="bg-summerCyan hover:bg-emerald-600 text-white font-black px-6 py-2.5 rounded-xl shadow transition">
+                    שמור שינויים
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: MODE SWITCHER -->
+    <div id="roleModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-card rounded-3xl p-6 w-full max-w-md text-center bg-white shadow-2xl">
+            <h3 class="text-2xl font-black text-summerDarkBlue mb-4">בחר מצב הפעלה</h3>
+            <p class="text-gray-600 text-sm mb-6 font-bold">האם מסך זה ישמש כמסך מנחה ראשי או כטלפון של שחקן?</p>
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="switchRole('host')" class="bg-summerBlue text-white font-black p-4 rounded-2xl shadow hover:bg-sky-700 transition">
+                    📺 מסך מנחה (מקרן)
+                </button>
+                <button onclick="switchRole('player')" class="bg-summerYellow text-summerDarkBlue font-black p-4 rounded-2xl shadow hover:bg-amber-400 transition">
+                    📱 משתתף (טלפון)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer Credit Bar -->
+    <footer class="relative z-10 py-3 text-center text-xs font-bold text-white/80 bg-black/10 backdrop-blur-sm border-t border-white/10">
+        טריוויה קייצית קבוצתית | מותאם להקרנה מול 40-60 משתתפים בזמן אמת ☀️
+    </footer>
+
+    <script>
+        /* ----------------------------------------------------
+           DEFAULT WHOLESOME GENERAL KNOWLEDGE QUESTION BANK
+           (Nature, Science, World Geography, Math Riddles, Fauna)
+           ---------------------------------------------------- */
+        const DEFAULT_QUESTIONS = [
+            {
+                category: "טבע ומדע",
+                text: "מהו הגז השכיח ביותר באטמוספירה של כדור הארץ?",
+                options: ["חמצן", "חנקן", "פחמן דו-חמצני", "מימן"],
+                correct: 1,
+                timeLimit: 20
+            },
+            {
+                category: "גיאוגרפיה ועולם",
+                text: "איזו מדינה היא הגדולה ביותר בשטחה בעולם?",
+                options: ["קנדה", "ארצות הברית", "סין", "רוסיה"],
+                correct: 3,
+                timeLimit: 20
+            },
+            {
+                category: "עולם החי והצומח",
+                text: "איזה יונק הוא היחיד שאינו מסוגל לקפוץ?",
+                options: ["פיל", "קרנף", "היפופוטם", "ג'ירפה"],
+                correct: 0,
+                timeLimit: 20
+            },
+            {
+                category: "חידות ומתמטיקה",
+                text: "כמה שניות יש בשעה אחת שלמה?",
+                options: ["600 שניות", "1,800 שניות", "3,600 שניות", "6,000 שניות"],
+                correct: 2,
+                timeLimit: 20
+            },
+            {
+                category: "שיאי עולם",
+                text: "מהו האוקיינוס הגדול ביותר על פני כדור הארץ?",
+                options: ["האוקיינוס האטלנטי", "האוקיינוס ההודי", "האוקיינוס השקט", "אוקיינוס הקרח הצפוני"],
+                correct: 2,
+                timeLimit: 20
+            },
+            {
+                category: "טבע ומדע",
+                text: "כמה הלבבות יש לתמנון?",
+                options: ["לב אחד", "שני לבבות", "שלושה לבבות", "ארבעה לבבות"],
+                correct: 2,
+                timeLimit: 20
+            },
+            {
+                category: "גיאוגרפיה ועולם",
+                text: "מהי היבשת הקרה והיבשה ביותר בעולם?",
+                options: ["אירופה", "אנטארקטיקה", "אסיה", "אמריקה הצפונית"],
+                correct: 1,
+                timeLimit: 20
+            },
+            {
+                category: "חידות ומתמטיקה",
+                text: "מהו המספר הראשוני הקטן ביותר?",
+                options: ["0", "1", "2", "3"],
+                correct: 2,
+                timeLimit: 20
+            }
+        ];
+
+        // STATE VARIABLES
+        let questions = JSON.parse(localStorage.getItem('summerQuiz_questions')) || DEFAULT_QUESTIONS;
+        let activeRole = 'host'; // 'host' or 'player'
+        let gamePin = Math.floor(1000 + Math.random() * 9000).toString();
+        let currentQuestionIdx = 0;
+        let players = {}; // id -> { name, score, currentAnswer, answerTime }
+        let timerInterval = null;
+        let timeLeft = 20;
+        let soundEnabled = true;
+        let peer = null;
+        let hostConn = null;
+        let localChannel = null;
+        let myPlayerId = 'player-' + Math.random().toString(36).substr(2, 6);
+        let myPlayerName = '';
+
+        // WEB AUDIO SYNTHESIZER (No external files needed)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                const now = audioCtx.currentTime;
+
+                if (type === 'tick') {
+                    osc.frequency.setValueAtTime(600, now);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                } else if (type === 'correct') {
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+                    osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                } else if (type === 'start') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(800, now + 0.4);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                }
+            } catch (e) {
+                console.log("Audio play error", e);
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            document.getElementById('soundToggleBtn').innerText = soundEnabled ? '🔊 שמע: פעיל' : '🔇 שמע: מנוטרל';
+        }
+
+        // INITIALIZATION
+        window.onload = function() {
+            generateBubbles();
+            initPeerJS();
+            renderQRCode();
+            document.getElementById('gamePinDisplay').innerText = gamePin;
+        };
+
+        function generateBubbles() {
+            const container = document.getElementById('bubblesContainer');
+            for (let i = 0; i < 15; i++) {
+                const b = document.createElement('div');
+                b.className = 'bubble';
+                const size = Math.random() * 40 + 20;
+                b.style.width = size + 'px';
+                b.style.height = size + 'px';
+                b.style.left = Math.random() * 100 + '%';
+                b.style.animationDelay = Math.random() * 5 + 's';
+                b.style.animationDuration = (Math.random() * 5 + 6) + 's';
+                container.appendChild(b);
+            }
+        }
+
+        function renderQRCode() {
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = "";
+            const joinUrl = window.location.href.split('?')[0] + '?pin=' + gamePin;
+            new QRCode(qrContainer, {
+                text: joinUrl,
+                width: 130,
+                height: 130,
+                colorDark: "#073B4C",
+                colorLight: "#ffffff"
+            });
+        }
+
+        function initPeerJS() {
+            // Setup PeerJS with Host ID formatted with PIN safely
+            const hostPeerId = "summerquiz-host-" + gamePin;
+            
+            try {
+                if (typeof Peer !== 'undefined') {
+                    peer = new Peer(hostPeerId);
+
+                    peer.on('open', (id) => {
+                        console.log('Host Peer initialized:', id);
+                    });
+
+                    peer.on('connection', (conn) => {
+                        conn.on('data', (data) => {
+                            handleIncomingPeerData(conn, data);
+                        });
+                    });
+
+                    peer.on('error', (err) => {
+                        console.warn('PeerJS connection restricted or offline:', err);
+                    });
+                }
+            } catch (e) {
+                console.warn('PeerJS WebSockets disabled or blocked in this environment:', e);
+            }
+
+            // Always setup local BroadcastChannel fallback for multi-tab / local network sync
+            setupBroadcastChannel();
+
+            // Check URL parameters if joined via QR code
+            const urlParams = new URLSearchParams(window.location.search);
+            const pinParam = urlParams.get('pin');
+            if (pinParam) {
+                switchRole('player');
+                document.getElementById('inputGamePin').value = pinParam;
+            }
+        }
+
+        function setupBroadcastChannel() {
+            try {
+                if (localChannel) localChannel.close();
+                localChannel = new BroadcastChannel('summerquiz_pin_' + gamePin);
+                localChannel.onmessage = (event) => {
+                    const data = event.data;
+                    if (activeRole === 'host') {
+                        if (data.type === 'JOIN') {
+                            const playerId = data.senderId || 'local-' + Math.random().toString(36).substr(2, 6);
+                            players[playerId] = {
+                                name: data.playerName,
+                                score: 0,
+                                currentAnswer: null
+                            };
+                            updateLobbyPlayersUI();
+                            localChannel.postMessage({ type: 'JOIN_SUCCESS', pin: gamePin, targetId: playerId });
+                        } else if (data.type === 'SUBMIT_ANSWER') {
+                            const playerId = data.senderId;
+                            if (players[playerId] && players[playerId].currentAnswer === null) {
+                                players[playerId].currentAnswer = data.answerIdx;
+                                players[playerId].answerTime = timeLeft;
+                                updateAnswersCountUI();
+                            }
+                        }
+                    } else {
+                        if (data.type === 'JOIN_SUCCESS' && (data.targetId === myPlayerId || !data.targetId)) {
+                            document.getElementById('playerLoginView').classList.add('hidden');
+                            document.getElementById('playerWaitingView').classList.remove('hidden');
+                            document.getElementById('playerGreetingText').innerText = `שלום, ${myPlayerName || 'שחקן'}! 👋`;
+                        } else if (data.type === 'SHOW_QUESTION') {
+                            document.getElementById('playerWaitingView').classList.add('hidden');
+                            document.getElementById('playerAnswerSubmittedView').classList.add('hidden');
+                            document.getElementById('playerControllerView').classList.remove('hidden');
+                            document.getElementById('playerControllerView').classList.add('flex');
+                        } else if (data.type === 'QUESTION_RESULT') {
+                            document.getElementById('playerControllerView').classList.add('hidden');
+                            document.getElementById('playerAnswerSubmittedView').classList.remove('hidden');
+                        }
+                    }
+                };
+            } catch (e) {
+                console.warn('BroadcastChannel not available:', e);
+            }
+        }
+
+        function handleIncomingPeerData(conn, data) {
+            if (data.type === 'JOIN') {
+                const playerId = conn.peer;
+                players[playerId] = {
+                    name: data.playerName,
+                    score: 0,
+                    currentAnswer: null,
+                    conn: conn
+                };
+                updateLobbyPlayersUI();
+                conn.send({ type: 'JOIN_SUCCESS', pin: gamePin });
+            } else if (data.type === 'SUBMIT_ANSWER') {
+                const playerId = conn.peer;
+                if (players[playerId] && players[playerId].currentAnswer === null) {
+                    players[playerId].currentAnswer = data.answerIdx;
+                    players[playerId].answerTime = timeLeft;
+                    updateAnswersCountUI();
+                }
+            }
+        }
+
+        function updateLobbyPlayersUI() {
+            const grid = document.getElementById('playersGrid');
+            const playerKeys = Object.keys(players);
+            document.getElementById('playerCountBadge').innerText = playerKeys.length;
+
+            if (playerKeys.length === 0) {
+                grid.innerHTML = `<p id="noPlayersText" class="text-gray-500 font-medium text-sm my-4">ממתין להתחברות המשתתפים...</p>`;
+                return;
+            }
+
+            grid.innerHTML = playerKeys.map(key => `
+                <span class="bg-white/80 text-summerDarkBlue font-bold px-3 py-1.5 rounded-xl shadow-sm text-sm border border-white flex items-center gap-1 animate-float">
+                    😎 ${players[key].name}
+                </span>
+            `).join('');
+        }
+
+        function simulatePlayers(count) {
+            const sampleNames = ["יוסי", "דניאל", "אריאל", "נועם", "אלעד", "יעקב", "אברהם", "משה", "דוד", "שלמה", "שמעון", "לוי", "יהודה", "בנימין", "רפאל", "חיים"];
+            for (let i = 0; i < count; i++) {
+                const simId = 'sim-' + Math.random().toString(36).substr(2, 9);
+                const randomName = sampleNames[Math.floor(Math.random() * sampleNames.length)] + " " + (i + 1);
+                players[simId] = {
+                    name: randomName,
+                    score: 0,
+                    currentAnswer: null,
+                    isSimulated: true
+                };
+            }
+            updateLobbyPlayersUI();
+        }
+
+        function startTriviaGame() {
+            if (Object.keys(players).length === 0) {
+                simulatePlayers(15); // Auto-add if starting alone for test
+            }
+
+            currentQuestionIdx = 0;
+            playSound('start');
+            broadcastToPlayers({ type: 'GAME_STARTED' });
+
+            document.getElementById('hostLobbyView').classList.add('hidden');
+            document.getElementById('hostQuestionView').classList.remove('hidden');
+            document.getElementById('hostQuestionView').classList.add('flex');
+
+            loadQuestion(currentQuestionIdx);
+        }
+
+        function loadQuestion(idx) {
+            const q = questions[idx];
+            document.getElementById('questionProgressText').innerText = `שאלה ${idx + 1} מתוך ${questions.length}`;
+            document.getElementById('categoryBadge').innerText = q.category;
+            document.getElementById('questionTextDisplay').innerText = q.text;
+
+            for (let i = 0; i < 4; i++) {
+                document.getElementById(`optText${i}`).innerText = q.options[i];
+            }
+
+            // Reset player answers
+            Object.keys(players).forEach(id => {
+                players[id].currentAnswer = null;
+            });
+
+            document.getElementById('totalPlayersInQuestion').innerText = Object.keys(players).length;
+            updateAnswersCountUI();
+
+            // Broadcast option screen to mobile players
+            broadcastToPlayers({ type: 'SHOW_QUESTION', questionIdx: idx });
+
+            // Start countdown timer
+            timeLeft = q.timeLimit;
+            document.getElementById('questionTimer').innerText = timeLeft;
+            document.getElementById('timerProgressBar').style.width = '100%';
+
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('questionTimer').innerText = timeLeft;
+                document.getElementById('timerProgressBar').style.width = ((timeLeft / q.timeLimit) * 100) + '%';
+                
+                playSound('tick');
+
+                // Simulate responses for bots
+                simulateBotAnswers();
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    revealQuestionResults();
+                }
+            }, 1000);
+        }
+
+        function simulateBotAnswers() {
+            Object.keys(players).forEach(id => {
+                if (players[id].isSimulated && players[id].currentAnswer === null) {
+                    // 70% chance to answer each second
+                    if (Math.random() < 0.3) {
+                        players[id].currentAnswer = Math.floor(Math.random() * 4);
+                        players[id].answerTime = timeLeft;
+                        updateAnswersCountUI();
+                    }
+                }
+            });
+        }
+
+        function updateAnswersCountUI() {
+            const answeredCount = Object.values(players).filter(p => p.currentAnswer !== null).length;
+            document.getElementById('answersReceivedCount').innerText = answeredCount;
+        }
+
+        function revealQuestionResults() {
+            clearInterval(timerInterval);
+            playSound('correct');
+
+            const q = questions[currentQuestionIdx];
+            const counts = [0, 0, 0, 0];
+
+            // Calculate score
+            Object.keys(players).forEach(id => {
+                const p = players[id];
+                if (p.currentAnswer !== null) {
+                    counts[p.currentAnswer]++;
+                    if (p.currentAnswer === q.correct) {
+                        // Points based on speed
+                        const speedBonus = (p.answerTime || 1) * 25;
+                        p.score += (500 + speedBonus);
+                    }
+                }
+            });
+
+            // Switch to reveal view
+            document.getElementById('hostQuestionView').classList.add('hidden');
+            document.getElementById('hostRevealView').classList.remove('hidden');
+            document.getElementById('hostRevealView').classList.add('flex');
+
+            document.getElementById('correctAnswerTitle').innerText = `התשובה הנכונה: ${q.options[q.correct]}`;
+
+            // Render Chart
+            const chart = document.getElementById('answerDistributionChart');
+            const total = Object.keys(players).length || 1;
+            const colors = ['bg-summerCoral', 'bg-summerBlue', 'bg-summerYellow', 'bg-summerCyan'];
+
+            chart.innerHTML = counts.map((cnt, i) => {
+                const pct = Math.round((cnt / total) * 100);
+                const isCorrect = (i === q.correct);
+                return `
+                    <div class="flex flex-col items-center h-full justify-end">
+                        <span class="text-xs font-bold text-gray-700 mb-1">${pct}%</span>
+                        <div class="w-full ${colors[i]} rounded-t-xl transition-all duration-1000 ${isCorrect ? 'ring-4 ring-emerald-400' : ''}" style="height: ${Math.max(pct, 10)}%"></div>
+                        <span class="font-black text-sm mt-2">${['A','B','C','D'][i]} ${isCorrect ? '✅' : ''}</span>
+                    </div>
+                `;
+            }).join('');
+
+            broadcastToPlayers({ type: 'QUESTION_RESULT', correctIdx: q.correct });
+        }
+
+        function showLeaderboard() {
+            document.getElementById('hostRevealView').classList.add('hidden');
+            document.getElementById('hostLeaderboardView').classList.remove('hidden');
+            document.getElementById('hostLeaderboardView').classList.add('flex');
+
+            // Sort players
+            const sorted = Object.values(players).sort((a, b) => b.score - a.score).slice(0, 5);
+            const list = document.getElementById('leaderboardList');
+
+            list.innerHTML = sorted.map((p, rank) => `
+                <div class="flex justify-between items-center bg-white/80 p-4 rounded-2xl shadow border border-white">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-full ${rank === 0 ? 'bg-amber-400' : rank === 1 ? 'bg-gray-300' : 'bg-amber-700'} text-white font-black flex items-center justify-center text-sm shadow">
+                            ${rank + 1}
+                        </span>
+                        <span class="font-extrabold text-lg text-summerDarkBlue">${p.name}</span>
+                    </div>
+                    <span class="text-xl font-black text-summerBlue">${p.score} נק'</span>
+                </div>
+            `).join('');
+
+            if (currentQuestionIdx >= questions.length - 1) {
+                document.getElementById('nextQuestionBtn').innerText = "לסיום המשחק והכרזת המנצחים 🏆";
+            } else {
+                document.getElementById('nextQuestionBtn').innerText = "לשאלה הבאה ➔";
+            }
+        }
+
+        function nextQuestion() {
+            currentQuestionIdx++;
+            if (currentQuestionIdx < questions.length) {
+                document.getElementById('hostLeaderboardView').classList.add('hidden');
+                document.getElementById('hostQuestionView').classList.remove('hidden');
+                document.getElementById('hostQuestionView').classList.add('flex');
+                loadQuestion(currentQuestionIdx);
+            } else {
+                showFinalPodium();
+            }
+        }
+
+        function showFinalPodium() {
+            document.getElementById('hostLeaderboardView').classList.add('hidden');
+            document.getElementById('hostFinalView').classList.remove('hidden');
+            document.getElementById('hostFinalView').classList.add('flex');
+
+            confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+
+            const sorted = Object.values(players).sort((a, b) => b.score - a.score);
+            const top3 = [sorted[1], sorted[0], sorted[2]]; // 2nd, 1st, 3rd
+
+            const podium = document.getElementById('podiumWinners');
+            podium.innerHTML = `
+                <!-- 2nd Place -->
+                ${top3[0] ? `
+                <div class="flex flex-col items-center">
+                    <span class="font-bold text-sm text-white drop-shadow">${top3[0].name}</span>
+                    <span class="text-xs text-yellow-200 font-bold mb-1">${top3[0].score} נק'</span>
+                    <div class="w-20 bg-gray-300 h-36 rounded-t-2xl flex items-center justify-center font-black text-2xl text-gray-700 shadow-lg border-2 border-white">
+                        2
+                    </div>
+                </div>` : ''}
+
+                <!-- 1st Place -->
+                ${top3[1] ? `
+                <div class="flex flex-col items-center">
+                    <span class="text-2xl mb-1">👑</span>
+                    <span class="font-black text-lg text-yellow-300 drop-shadow">${top3[1].name}</span>
+                    <span class="text-xs text-yellow-100 font-bold mb-1">${top3[1].score} נק'</span>
+                    <div class="w-24 bg-summerYellow h-48 rounded-t-2xl flex items-center justify-center font-black text-4xl text-summerDarkBlue shadow-2xl border-4 border-white">
+                        1
+                    </div>
+                </div>` : ''}
+
+                <!-- 3rd Place -->
+                ${top3[2] ? `
+                <div class="flex flex-col items-center">
+                    <span class="font-bold text-sm text-white drop-shadow">${top3[2].name}</span>
+                    <span class="text-xs text-yellow-200 font-bold mb-1">${top3[2].score} נק'</span>
+                    <div class="w-20 bg-amber-600 h-28 rounded-t-2xl flex items-center justify-center font-black text-2xl text-white shadow-lg border-2 border-white">
+                        3
+                    </div>
+                </div>` : ''}
+            `;
+        }
+
+        function resetToLobby() {
+            document.getElementById('hostFinalView').classList.add('hidden');
+            document.getElementById('hostLobbyView').classList.remove('hidden');
+            document.getElementById('hostLobbyView').classList.add('flex');
+            players = {};
+            updateLobbyPlayersUI();
+        }
+
+        function broadcastToPlayers(msg) {
+            Object.values(players).forEach(p => {
+                if (p.conn) {
+                    try { p.conn.send(msg); } catch (e) {}
+                }
+            });
+            if (localChannel) {
+                try { localChannel.postMessage(msg); } catch (e) {}
+            }
+        }
+
+        function connectPlayerToHost() {
+            const pin = document.getElementById('inputGamePin').value.trim();
+            const name = document.getElementById('inputPlayerName').value.trim();
+
+            if (!pin || !name) {
+                alertModal("אנא הזינו קוד PIN ושם משתתף");
+                return;
+            }
+
+            myPlayerName = name;
+
+            if (peer) {
+                try {
+                    const hostPeerId = "summerquiz-host-" + pin;
+                    hostConn = peer.connect(hostPeerId);
+
+                    hostConn.on('open', () => {
+                        hostConn.send({ type: 'JOIN', playerName: name });
+                    });
+
+                    hostConn.on('data', (data) => {
+                        if (data.type === 'JOIN_SUCCESS') {
+                            document.getElementById('playerLoginView').classList.add('hidden');
+                            document.getElementById('playerWaitingView').classList.remove('hidden');
+                            document.getElementById('playerGreetingText').innerText = `שלום, ${name}! 👋`;
+                        } else if (data.type === 'SHOW_QUESTION') {
+                            document.getElementById('playerWaitingView').classList.add('hidden');
+                            document.getElementById('playerAnswerSubmittedView').classList.add('hidden');
+                            document.getElementById('playerControllerView').classList.remove('hidden');
+                            document.getElementById('playerControllerView').classList.add('flex');
+                        } else if (data.type === 'QUESTION_RESULT') {
+                            document.getElementById('playerControllerView').classList.add('hidden');
+                            document.getElementById('playerAnswerSubmittedView').classList.remove('hidden');
+                        }
+                    });
+                } catch (e) {
+                    console.warn('PeerJS connection failed, using local channel', e);
+                }
+            }
+
+            if (localChannel) {
+                try {
+                    localChannel.postMessage({ type: 'JOIN', playerName: name, senderId: myPlayerId });
+                } catch (e) {}
+            }
+
+            // Local fallback simulation if testing in same window
+            if (pin === gamePin) {
+                players[myPlayerId] = { name: name, score: 0, currentAnswer: null };
+                updateLobbyPlayersUI();
+                document.getElementById('playerLoginView').classList.add('hidden');
+                document.getElementById('playerWaitingView').classList.remove('hidden');
+                document.getElementById('playerGreetingText').innerText = `שלום, ${name}! 👋`;
+            }
+        }
+
+        function submitPlayerAnswer(optIdx) {
+            if (hostConn) {
+                try { hostConn.send({ type: 'SUBMIT_ANSWER', answerIdx: optIdx }); } catch(e) {}
+            }
+            if (localChannel) {
+                try { localChannel.postMessage({ type: 'SUBMIT_ANSWER', answerIdx: optIdx, senderId: myPlayerId }); } catch(e) {}
+            }
+            if (players[myPlayerId] || players['self-player']) {
+                const target = players[myPlayerId] || players['self-player'];
+                target.currentAnswer = optIdx;
+                target.answerTime = timeLeft;
+                updateAnswersCountUI();
+            }
+
+            document.getElementById('playerControllerView').classList.add('hidden');
+            document.getElementById('playerAnswerSubmittedView').classList.remove('hidden');
+            playSound('tick');
+        }
+
+        function switchRole(role) {
+            activeRole = role;
+            document.getElementById('roleModal').classList.add('hidden');
+            if (role === 'host') {
+                document.getElementById('playerContainer').classList.add('hidden');
+                document.getElementById('hostContainer').classList.remove('hidden');
+                document.getElementById('hostContainer').classList.add('flex');
+            } else {
+                document.getElementById('hostContainer').classList.add('hidden');
+                document.getElementById('playerContainer').classList.remove('hidden');
+                document.getElementById('playerContainer').classList.add('flex');
+            }
+        }
+
+        function toggleRoleModal() {
+            document.getElementById('roleModal').classList.remove('hidden');
+        }
+
+        function openEditorModal() {
+            renderEditorQuestions();
+            document.getElementById('editorModal').classList.remove('hidden');
+        }
+
+        function closeEditorModal() {
+            document.getElementById('editorModal').classList.add('hidden');
+        }
+
+        function renderEditorQuestions() {
+            const list = document.getElementById('questionsEditorList');
+            list.innerHTML = questions.map((q, idx) => `
+                <div class="p-4 bg-gray-50 rounded-2xl border border-gray-200 text-right space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="font-bold text-sm text-summerBlue">שאלה ${idx + 1}</span>
+                        <button onclick="removeQuestionFromEditor(${idx})" class="text-rose-500 font-bold text-xs hover:underline">מחק שאלה</button>
+                    </div>
+                    <input type="text" value="${q.text}" onchange="questions[${idx}].text = this.value" class="w-full px-3 py-2 border rounded-xl font-bold text-sm">
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        ${q.options.map((opt, oIdx) => `
+                            <div class="flex items-center gap-1">
+                                <input type="radio" name="correct_${idx}" ${q.correct === oIdx ? 'checked' : ''} onchange="questions[${idx}].correct = ${oIdx}">
+                                <input type="text" value="${opt}" onchange="questions[${idx}].options[${oIdx}] = this.value" class="w-full p-1.5 border rounded-lg">
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addNewQuestionToEditor() {
+            questions.push({
+                category: "כללי",
+                text: "שאלה חדשה שנערכה",
+                options: ["תשובה 1", "תשובה 2", "תשובה 3", "תשובה 4"],
+                correct: 0,
+                timeLimit: 20
+            });
+            renderEditorQuestions();
+        }
+
+        function removeQuestionFromEditor(idx) {
+            questions.splice(idx, 1);
+            renderEditorQuestions();
+        }
+
+        function saveCustomQuestions() {
+            localStorage.setItem('summerQuiz_questions', JSON.stringify(questions));
+            closeEditorModal();
+            alertModal("השאלות נשמרו בהצלחה!");
+        }
+
+        function alertModal(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-summerDarkBlue text-white font-bold px-6 py-3 rounded-2xl shadow-2xl transition transform duration-300';
+            toast.innerText = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+    </script>
+</body>
+</html>

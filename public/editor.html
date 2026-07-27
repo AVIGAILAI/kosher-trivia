@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>עורך שאלות טריוויה</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family:'Rubik',sans-serif; background:linear-gradient(135deg,#06D6A0 0%,#118AB2 50%,#073B4C 100%); min-height:100vh; }
+    .card { background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.12); }
+    .ans-correct { background:#dcfce7 !important; border-color:#22c55e !important; }
+    input:focus, textarea:focus { outline:none; }
+    .qnum { background:#118AB2; }
+  </style>
+</head>
+<body class="p-3 md:p-6 text-slate-800">
+  <div class="max-w-6xl mx-auto">
+    <!-- כותרת -->
+    <header class="flex flex-wrap items-center justify-between gap-3 mb-5 text-white">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 bg-yellow-300 rounded-2xl flex items-center justify-center text-2xl shadow">✏️</div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-black drop-shadow">עורך שאלות</h1>
+          <p class="text-xs text-yellow-100 font-semibold">הכניסי ושני שאלות ותשובות בקלות — נשמר לתמיד</p>
+        </div>
+      </div>
+      <a href="/" class="bg-white/90 hover:bg-white text-slate-700 font-bold px-4 py-2 rounded-xl shadow text-sm">← חזרה למסך המנחה</a>
+    </header>
+
+    <div class="grid md:grid-cols-[260px_1fr] gap-4">
+      <!-- רשימת מאגרים -->
+      <aside class="card rounded-3xl p-4 h-fit md:sticky md:top-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-black text-lg">מאגרי שאלות</h2>
+        </div>
+        <div id="quizList" class="space-y-2 mb-3"></div>
+        <button id="btnNewQuiz" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl shadow text-sm">＋ מאגר חדש</button>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <button id="btnRename" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs">✏️ שנה שם</button>
+          <button id="btnDeleteQuiz" class="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold py-2 rounded-xl text-xs">🗑️ מחק מאגר</button>
+        </div>
+      </aside>
+
+      <!-- שאלות המאגר -->
+      <main class="card rounded-3xl p-4 md:p-6">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4 border-b pb-3">
+          <div>
+            <h2 id="curName" class="text-2xl font-black">—</h2>
+            <p id="curCount" class="text-sm text-slate-500 font-bold">0 שאלות</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="saveState" class="text-sm font-bold text-slate-400"></span>
+            <button id="btnSave" class="bg-sky-600 hover:bg-sky-700 text-white font-black px-6 py-2.5 rounded-xl shadow">💾 שמור</button>
+          </div>
+        </div>
+
+        <div id="questions" class="space-y-4"></div>
+
+        <button id="btnAddQ" class="w-full mt-4 border-2 border-dashed border-sky-300 text-sky-700 hover:bg-sky-50 font-black py-4 rounded-2xl">＋ הוסף שאלה חדשה</button>
+      </main>
+    </div>
+  </div>
+
+  <!-- toast -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-800 text-white font-bold px-6 py-3 rounded-2xl shadow-2xl hidden"></div>
+
+  <script>
+    const LETTERS = ['1','2','3','4'];
+    let quizzes = [];      // [{id,name,count}]
+    let currentId = null;
+    let current = null;    // {id,name,questions:[...]}
+    let dirty = false;
+
+    const $ = (id) => document.getElementById(id);
+    const toast = (msg) => { const t=$('toast'); t.innerText=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),2200); };
+    const setDirty = (d) => { dirty=d; $('saveState').innerText = d ? '● יש שינויים שלא נשמרו' : '✓ שמור'; $('saveState').className = 'text-sm font-bold ' + (d?'text-amber-600':'text-emerald-600'); };
+
+    async function api(url, opts){ const r = await fetch(url, opts); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'שגיאה'); return r.json(); }
+
+    async function loadQuizzes(selectId){
+      quizzes = await api('/api/quizzes');
+      renderQuizList();
+      const pick = selectId || (quizzes[0] && quizzes[0].id);
+      if(pick) await selectQuiz(pick);
+    }
+
+    function renderQuizList(){
+      $('quizList').innerHTML = quizzes.map(q => `
+        <button data-id="${q.id}" class="quiz-item w-full text-right px-3 py-2.5 rounded-xl font-bold text-sm transition ${q.id===currentId?'bg-sky-600 text-white shadow':'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
+          ${escapeHtml(q.name)}
+          <span class="block text-xs font-normal ${q.id===currentId?'text-sky-100':'text-slate-400'}">${q.count} שאלות</span>
+        </button>`).join('');
+      document.querySelectorAll('.quiz-item').forEach(b => b.onclick = () => {
+        if(dirty && !confirm('יש שינויים שלא נשמרו. לעבור בכל זאת ולאבד אותם?')) return;
+        selectQuiz(b.dataset.id);
+      });
+    }
+
+    async function selectQuiz(id){
+      currentId = id;
+      current = await api('/api/quizzes/'+id);
+      $('curName').innerText = current.name;
+      renderQuestions();
+      renderQuizList();
+      setDirty(false);
+    }
+
+    function renderQuestions(){
+      $('curCount').innerText = current.questions.length + ' שאלות';
+      $('questions').innerHTML = current.questions.map((q,i) => questionCard(q,i)).join('');
+      bindQuestionEvents();
+    }
+
+    function questionCard(q, i){
+      return `
+      <div class="rounded-2xl border border-slate-200 p-4 bg-slate-50" data-i="${i}">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="qnum text-white font-black w-8 h-8 rounded-lg flex items-center justify-center">${i+1}</span>
+            <input class="f-category bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold w-40" value="${escapeAttr(q.category)}" placeholder="קטגוריה" />
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-500 font-bold">זמן:</label>
+            <input type="number" min="5" max="120" class="f-time bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold w-16 text-center" value="${q.timeLimit}" /> <span class="text-xs text-slate-400">שנ'</span>
+            <button class="f-del text-rose-500 hover:text-rose-700 font-bold text-sm mr-2">🗑️ מחק</button>
+          </div>
+        </div>
+        <textarea class="f-text w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-lg mb-3 resize-none" rows="2" placeholder="נוסח השאלה...">${escapeHtml(q.text)}</textarea>
+        <p class="text-xs text-slate-500 font-bold mb-2">סמני את התשובה הנכונה (המסומן בירוק = נכון):</p>
+        <div class="grid md:grid-cols-2 gap-2">
+          ${q.options.map((opt,oi) => `
+            <label class="ans-row flex items-center gap-2 bg-white border-2 rounded-xl px-3 py-2 cursor-pointer ${q.correct===oi?'ans-correct':'border-slate-200'}" data-oi="${oi}">
+              <input type="radio" name="correct-${i}" class="f-correct w-4 h-4" ${q.correct===oi?'checked':''} />
+              <span class="font-black text-slate-400 w-5">${LETTERS[oi]}</span>
+              <input class="f-opt flex-1 bg-transparent font-bold" value="${escapeAttr(opt)}" placeholder="תשובה ${LETTERS[oi]}" />
+            </label>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    function bindQuestionEvents(){
+      document.querySelectorAll('#questions [data-i]').forEach(card => {
+        const i = Number(card.dataset.i);
+        card.querySelector('.f-category').oninput = (e)=>{ current.questions[i].category=e.target.value; setDirty(true); };
+        card.querySelector('.f-time').oninput = (e)=>{ current.questions[i].timeLimit=Number(e.target.value)||20; setDirty(true); };
+        card.querySelector('.f-text').oninput = (e)=>{ current.questions[i].text=e.target.value; setDirty(true); };
+        card.querySelector('.f-del').onclick = ()=>{ if(confirm('למחוק את השאלה?')){ current.questions.splice(i,1); renderQuestions(); setDirty(true); } };
+        card.querySelectorAll('.f-opt').forEach((inp,oi)=>{ inp.oninput=(e)=>{ current.questions[i].options[oi]=e.target.value; setDirty(true); }; });
+        card.querySelectorAll('.f-correct').forEach((rb,oi)=>{ rb.onchange=()=>{ current.questions[i].correct=oi; renderQuestions(); setDirty(true); }; });
+      });
+    }
+
+    $('btnAddQ').onclick = ()=>{
+      current.questions.push({ category:'כללי', text:'', options:['','','',''], correct:0, timeLimit:20 });
+      renderQuestions(); setDirty(true);
+      window.scrollTo(0, document.body.scrollHeight);
+    };
+
+    $('btnSave').onclick = async ()=>{
+      try {
+        await api('/api/quizzes/'+currentId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name: current.name, questions: current.questions }) });
+        setDirty(false); toast('נשמר בהצלחה ✓');
+        quizzes = await api('/api/quizzes'); renderQuizList();
+      } catch(e){ toast('שגיאה בשמירה: '+e.message); }
+    };
+
+    $('btnNewQuiz').onclick = async ()=>{
+      const name = prompt('שם המאגר החדש:', 'מאגר חדש');
+      if(!name) return;
+      const q = await api('/api/quizzes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+      await loadQuizzes(q.id); toast('נוצר מאגר חדש');
+    };
+
+    $('btnRename').onclick = async ()=>{
+      if(!current) return;
+      const name = prompt('שם חדש למאגר:', current.name);
+      if(!name) return;
+      current.name = name; $('curName').innerText = name;
+      await api('/api/quizzes/'+currentId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name, questions: current.questions }) });
+      quizzes = await api('/api/quizzes'); renderQuizList(); setDirty(false); toast('השם עודכן');
+    };
+
+    $('btnDeleteQuiz').onclick = async ()=>{
+      if(!current) return;
+      if(!confirm(`למחוק את המאגר "${current.name}" על כל שאלותיו?`)) return;
+      try {
+        await api('/api/quizzes/'+currentId, { method:'DELETE' });
+        currentId=null; await loadQuizzes(); toast('המאגר נמחק');
+      } catch(e){ toast(e.message); }
+    };
+
+    window.addEventListener('beforeunload', (e)=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function escapeAttr(s){ return escapeHtml(s); }
+
+    loadQuizzes();
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# הגדרת פריסה אוטומטית ל-Render (https://render.com)
+# מריצים "New → Blueprint" ומצביעים על הריפו הזה — Render יקרא את הקובץ ויקים הכל.
+services:
+  - type: web
+    name: kosher-trivia
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

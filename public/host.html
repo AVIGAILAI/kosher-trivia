@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>טריוויה קבוצתית — מסך מנחה</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Rubik', sans-serif; background: linear-gradient(135deg,#06D6A0 0%,#118AB2 50%,#073B4C 100%); min-height:100vh; }
+    .glass { background: rgba(255,255,255,.92); backdrop-filter: blur(12px); box-shadow: 0 20px 40px rgba(0,0,0,.15); }
+    .opt-a{background:#EF476F}.opt-b{background:#118AB2}.opt-c{background:#FFD166;color:#073B4C}.opt-d{background:#06D6A0}
+  </style>
+</head>
+<body class="text-slate-800 p-4 md:p-8">
+  <div class="max-w-5xl mx-auto">
+    <header class="flex items-center gap-3 mb-6 text-white">
+      <div class="w-12 h-12 bg-yellow-300 rounded-2xl flex items-center justify-center text-2xl shadow-lg">🎯</div>
+      <div>
+        <h1 class="text-2xl font-black drop-shadow">טריוויה קבוצתית</h1>
+        <p class="text-xs text-yellow-100 font-semibold">מסך מנחה — להקרנה</p>
+      </div>
+    </header>
+
+    <!-- לובי -->
+    <section id="view-lobby" class="glass rounded-3xl p-8 text-center">
+      <div class="inline-block bg-rose-500 text-white px-6 py-2 rounded-full font-bold text-sm tracking-widest mb-4">משחק חדש</div>
+      <h2 class="text-3xl md:text-4xl font-black mb-2">ברוכים הבאים!</h2>
+      <p class="text-gray-600 font-medium mb-8">התחברו דרך הדפדפן, או התקשרו למספר והקישו את הקוד</p>
+
+      <div class="grid md:grid-cols-2 gap-8 items-center bg-white/60 rounded-2xl p-6">
+        <div class="flex flex-col items-center border-b md:border-b-0 md:border-l border-gray-300 pb-6 md:pb-0 md:pl-6">
+          <div id="qrcode" class="p-3 bg-white rounded-2xl shadow border"></div>
+          <span class="text-xs text-gray-500 font-bold mt-3">סרקו להתחברות בדפדפן</span>
+        </div>
+        <div class="flex flex-col items-center justify-center">
+          <span class="text-gray-600 font-bold text-sm mb-1">קוד המשחק (PIN):</span>
+          <div id="pin" class="text-6xl font-black text-sky-700 tracking-widest bg-yellow-100 px-8 py-3 rounded-2xl border-2 border-yellow-300 mb-4">----</div>
+          <div class="flex items-center gap-3">
+            <span class="text-xl font-extrabold">משתתפים:</span>
+            <span id="playerCount" class="bg-rose-500 text-white text-2xl font-black px-4 py-1 rounded-full">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- בורר מאגר שאלות -->
+      <div class="flex flex-wrap items-center justify-center gap-3 mt-6 bg-white/60 rounded-2xl p-4">
+        <label class="font-bold text-slate-700 text-sm">מאגר השאלות:</label>
+        <select id="quizSelect" class="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-bold focus:border-sky-500 outline-none"></select>
+        <span id="quizCount" class="text-sm text-slate-500 font-bold"></span>
+        <a href="/editor" target="_blank" class="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-bold px-4 py-2 rounded-xl shadow text-sm">✏️ ערוך שאלות</a>
+      </div>
+
+      <div id="playersGrid" class="flex flex-wrap gap-2 justify-center mt-6 max-h-40 overflow-y-auto p-3 bg-white/40 rounded-xl">
+        <p class="text-gray-500 text-sm my-3">ממתין להתחברות המשתתפים...</p>
+      </div>
+
+      <button id="btnStart" class="mt-8 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-2xl px-12 py-4 rounded-2xl shadow-xl transition disabled:opacity-40">התחל משחק 🚀</button>
+    </section>
+
+    <!-- שאלה -->
+    <section id="view-question" class="hidden">
+      <div class="flex justify-between items-center mb-4 text-white font-bold">
+        <span id="qProgress" class="text-xl bg-black/30 px-4 py-2 rounded-xl">שאלה 1</span>
+        <div class="flex items-center gap-2 bg-black/30 px-5 py-2 rounded-xl"><span>⏱️</span><span id="timer" class="text-3xl font-black text-yellow-300">20</span></div>
+      </div>
+      <div class="glass rounded-3xl p-8 text-center mb-6">
+        <div id="qCategory" class="inline-block bg-sky-600 text-white px-5 py-1.5 rounded-full font-bold text-xs mb-4">קטגוריה</div>
+        <h2 id="qText" class="text-2xl md:text-4xl font-black leading-relaxed mb-6">טוען שאלה...</h2>
+        <div class="w-full bg-gray-200 rounded-full h-3 mb-4 overflow-hidden"><div id="timerBar" class="bg-rose-500 h-full transition-all duration-1000 ease-linear" style="width:100%"></div></div>
+        <p class="font-bold text-gray-600">נענו: <span id="answersCount" class="text-sky-700 font-black text-lg">0</span> / <span id="totalPlayers">0</span></p>
+      </div>
+      <div id="qOptions" class="grid md:grid-cols-2 gap-4"></div>
+      <div class="text-center mt-4">
+        <button id="btnSkip" class="bg-white/80 hover:bg-white text-slate-700 font-bold px-6 py-2 rounded-xl">דלג לתוצאות ⏭️</button>
+      </div>
+    </section>
+
+    <!-- חשיפת תשובה -->
+    <section id="view-reveal" class="hidden glass rounded-3xl p-8 text-center">
+      <h3 class="text-3xl font-black mb-2">תוצאות השאלה</h3>
+      <p id="correctAnswer" class="text-xl font-extrabold text-emerald-600 mb-6"></p>
+      <div id="distChart" class="grid grid-cols-4 gap-4 h-48 items-end bg-white/50 p-6 rounded-2xl mb-6"></div>
+      <button id="btnLeaderboard" class="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-black text-2xl px-10 py-4 rounded-2xl shadow-lg">טבלת מובילים 🏆</button>
+    </section>
+
+    <!-- טבלת מובילים -->
+    <section id="view-leaderboard" class="hidden glass rounded-3xl p-8 text-center">
+      <div class="text-4xl mb-2">🏆</div>
+      <h3 class="text-3xl font-black mb-6">לוח המובילים</h3>
+      <div id="leaderboardList" class="space-y-3 mb-8"></div>
+      <button id="btnNext" class="bg-emerald-500 hover:bg-emerald-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl">לשאלה הבאה ➔</button>
+    </section>
+
+    <!-- סיום -->
+    <section id="view-final" class="hidden glass rounded-3xl p-10 text-center">
+      <div class="text-6xl mb-4">👑</div>
+      <h2 class="text-4xl font-black mb-6">אלופי הטריוויה!</h2>
+      <div id="finalList" class="space-y-3 mb-8 max-w-md mx-auto"></div>
+      <button id="btnRestart" class="bg-rose-500 hover:bg-rose-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl">משחק חדש 🔄</button>
+    </section>
+  </div>
+
+  <script>
+    const socket = io();
+    const OPT_CLASS = ['opt-a','opt-b','opt-c','opt-d'];
+    const OPT_LETTER = ['1','2','3','4'];
+    let pin = null;
+
+    const views = ['lobby','question','reveal','leaderboard','final'];
+    function show(view){ views.forEach(v => document.getElementById('view-'+v).classList.toggle('hidden', v!==view)); }
+
+    socket.on('connect', () => {
+      socket.emit('host:create', { gameType:'trivia' }, (res) => {
+        if(!res || !res.ok) return;
+        pin = res.pin;
+        document.getElementById('pin').innerText = pin;
+        renderQR(pin);
+        render(res.state);
+        loadQuizzes(res.quizId);
+      });
+    });
+
+    // בורר מאגרי שאלות
+    async function loadQuizzes(selectedId){
+      try {
+        const quizzes = await (await fetch('/api/quizzes')).json();
+        const sel = document.getElementById('quizSelect');
+        sel.innerHTML = quizzes.map(q => `<option value="${q.id}" data-count="${q.count}" ${q.id===selectedId?'selected':''}>${escapeHtml(q.name)}</option>`).join('');
+        updateQuizCount();
+        // סנכרון המשחק עם הגרסה השמורה העדכנית (חשוב אחרי עריכה בעורך)
+        if(sel.value) socket.emit('host:setQuiz', { quizId: sel.value });
+        sel.onchange = () => {
+          socket.emit('host:setQuiz', { quizId: sel.value });
+          updateQuizCount();
+        };
+      } catch(e){ /* אין רשת — נשאר עם ברירת מחדל */ }
+    }
+    // רענון רשימת המאגרים בכל פעם שחוזרים ללובי (אחרי עריכה בטאב אחר)
+    window.addEventListener('focus', () => { if(pin) loadQuizzes(document.getElementById('quizSelect').value); });
+    function updateQuizCount(){
+      const opt = document.getElementById('quizSelect').selectedOptions[0];
+      document.getElementById('quizCount').innerText = opt ? `(${opt.dataset.count} שאלות)` : '';
+    }
+
+    function renderQR(pin){
+      const el = document.getElementById('qrcode');
+      el.innerHTML = '';
+      const url = location.origin + '/controller?pin=' + pin;
+      new QRCode(el, { text:url, width:140, height:140, colorDark:'#073B4C', colorLight:'#ffffff' });
+    }
+
+    document.getElementById('btnStart').onclick = () => socket.emit('host:start');
+    document.getElementById('btnSkip').onclick = () => socket.emit('host:action', { action:'skip' });
+    document.getElementById('btnLeaderboard').onclick = () => socket.emit('host:action', { action:'leaderboard' });
+    document.getElementById('btnNext').onclick = () => socket.emit('host:action', { action:'next' });
+    document.getElementById('btnRestart').onclick = () => socket.emit('host:action', { action:'restart' });
+
+    socket.on('host:state', render);
+
+    function render(state){
+      if(!state) return;
+      const g = state.game || {};
+      // לובי
+      document.getElementById('playerCount').innerText = state.players.length;
+      const grid = document.getElementById('playersGrid');
+      if(state.players.length === 0){
+        grid.innerHTML = '<p class="text-gray-500 text-sm my-3">ממתין להתחברות המשתתפים...</p>';
+      } else {
+        grid.innerHTML = state.players.map(p =>
+          `<span class="bg-white/80 font-bold px-3 py-1.5 rounded-xl shadow-sm text-sm flex items-center gap-1">${p.kind==='phone'?'📞':'😎'} ${escapeHtml(p.name)}</span>`
+        ).join('');
+      }
+
+      const phase = g.phase || 'lobby';
+      if(phase === 'lobby'){ show('lobby'); return; }
+      if(phase === 'question'){ renderQuestion(g); show('question'); return; }
+      if(phase === 'reveal'){ renderReveal(g); show('reveal'); return; }
+      if(phase === 'leaderboard'){ renderLeaderboard(g); show('leaderboard'); return; }
+      if(phase === 'final'){ renderFinal(g); show('final'); return; }
+    }
+
+    function renderQuestion(g){
+      document.getElementById('qProgress').innerText = `שאלה ${g.questionNumber} מתוך ${g.totalQuestions}`;
+      document.getElementById('timer').innerText = g.timeLeft;
+      document.getElementById('timerBar').style.width = ((g.timeLeft / g.timeLimit) * 100) + '%';
+      document.getElementById('answersCount').innerText = g.answersCount;
+      document.getElementById('totalPlayers').innerText = g.totalPlayers;
+      if(g.question){
+        document.getElementById('qCategory').innerText = g.question.category;
+        document.getElementById('qText').innerText = g.question.text;
+        document.getElementById('qOptions').innerHTML = g.question.options.map((opt,i) =>
+          `<div class="glass p-5 rounded-2xl flex items-center shadow-lg">
+             <span class="w-10 h-10 rounded-xl ${OPT_CLASS[i]} text-white font-black text-xl flex items-center justify-center ml-4">${OPT_LETTER[i]}</span>
+             <span class="text-xl font-bold">${escapeHtml(opt)}</span>
+           </div>`).join('');
+      }
+    }
+
+    function renderReveal(g){
+      const opts = (g.question && g.question.options) || [];
+      document.getElementById('correctAnswer').innerText = 'התשובה הנכונה: ' + (opts[g.correct] ?? '');
+      const total = g.totalPlayers || 1;
+      document.getElementById('distChart').innerHTML = (g.distribution||[]).map((cnt,i) => {
+        const pct = Math.round((cnt/total)*100);
+        const correct = i === g.correct;
+        return `<div class="flex flex-col items-center h-full justify-end">
+          <span class="text-xs font-bold mb-1">${pct}%</span>
+          <div class="w-full ${OPT_CLASS[i]} rounded-t-xl ${correct?'ring-4 ring-emerald-400':''}" style="height:${Math.max(pct,8)}%"></div>
+          <span class="font-black text-sm mt-2">${OPT_LETTER[i]} ${correct?'✅':''}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function renderLeaderboard(g){
+      const board = g.leaderboard || [];
+      document.getElementById('leaderboardList').innerHTML = board.slice(0,5).map((p,i) =>
+        `<div class="flex justify-between items-center bg-white/80 p-4 rounded-2xl shadow">
+           <div class="flex items-center gap-3">
+             <span class="w-8 h-8 rounded-full ${i===0?'bg-amber-400':i===1?'bg-gray-300':i===2?'bg-amber-700':'bg-sky-400'} text-white font-black flex items-center justify-center text-sm">${i+1}</span>
+             <span class="font-extrabold text-lg">${p.kind==='phone'?'📞 ':''}${escapeHtml(p.name)}</span>
+           </div>
+           <span class="text-xl font-black text-sky-700">${p.score} נק'</span>
+         </div>`).join('') || '<p class="text-gray-500">אין עדיין תוצאות</p>';
+      document.getElementById('btnNext').innerText = g.isLast ? 'לסיום והכרזת המנצחים 🏆' : 'לשאלה הבאה ➔';
+    }
+
+    function renderFinal(g){
+      const board = g.leaderboard || [];
+      document.getElementById('finalList').innerHTML = board.slice(0,5).map((p,i) =>
+        `<div class="flex justify-between items-center ${i===0?'bg-yellow-100 border-2 border-yellow-400':'bg-white/80'} p-4 rounded-2xl shadow">
+           <div class="flex items-center gap-3">
+             <span class="text-2xl">${['👑','🥈','🥉','4️⃣','5️⃣'][i]||''}</span>
+             <span class="font-extrabold text-lg">${escapeHtml(p.name)}</span>
+           </div>
+           <span class="text-xl font-black text-sky-700">${p.score} נק'</span>
+         </div>`).join('');
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  </script>
+</body>
+</html>
