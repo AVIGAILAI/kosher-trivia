@@ -83,6 +83,7 @@
       <div class="flex flex-wrap justify-center gap-3 mt-5">
         <button class="act-prev bg-white/80 hover:bg-white text-slate-700 font-bold px-5 py-2 rounded-xl">⏮ שאלה קודמת</button>
         <button id="btnSkip" class="bg-white/80 hover:bg-white text-slate-700 font-bold px-5 py-2 rounded-xl">דלג לתוצאות ⏭️</button>
+        <button class="act-finish bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2 rounded-xl">🏁 סיום משחק</button>
         <button class="act-stop bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-2 rounded-xl">⏹ עצור וחזרה למסך הראשי</button>
       </div>
     </section>
@@ -92,9 +93,13 @@
       <h3 class="text-3xl font-black mb-2">תוצאות השאלה</h3>
       <p id="correctAnswer" class="text-xl font-extrabold text-emerald-600 mb-6"></p>
       <div id="distChart" class="grid grid-cols-4 gap-4 h-48 items-end bg-white/50 p-6 rounded-2xl mb-6"></div>
+      <div class="flex flex-wrap justify-center gap-3 mb-3">
+        <button class="act-next bg-emerald-500 hover:bg-emerald-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl">לשאלה הבאה ➔</button>
+        <button id="btnLeaderboard" class="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-black text-2xl px-10 py-4 rounded-2xl shadow-lg">טבלת מובילים 🏆</button>
+      </div>
       <div class="flex flex-wrap justify-center gap-3">
         <button class="act-prev bg-white/80 hover:bg-white text-slate-700 font-bold px-5 py-3 rounded-2xl">⏮ שאלה קודמת</button>
-        <button id="btnLeaderboard" class="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-black text-2xl px-10 py-4 rounded-2xl shadow-lg">טבלת מובילים 🏆</button>
+        <button class="act-finish bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-3 rounded-2xl">🏁 סיום משחק</button>
         <button class="act-stop bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-3 rounded-2xl">⏹ עצור</button>
       </div>
     </section>
@@ -105,8 +110,11 @@
       <h3 class="text-3xl font-black mb-6">לוח המובילים</h3>
       <div id="leaderboardList" class="space-y-3 mb-8"></div>
       <div class="flex flex-wrap justify-center gap-3">
-        <button class="act-prev bg-white/80 hover:bg-white text-slate-700 font-bold px-5 py-3 rounded-2xl">⏮ שאלה קודמת</button>
         <button id="btnNext" class="bg-emerald-500 hover:bg-emerald-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl">לשאלה הבאה ➔</button>
+      </div>
+      <div class="flex flex-wrap justify-center gap-3 mt-3">
+        <button class="act-prev bg-white/80 hover:bg-white text-slate-700 font-bold px-5 py-3 rounded-2xl">⏮ שאלה קודמת</button>
+        <button class="act-finish bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-3 rounded-2xl">🏁 סיום משחק</button>
         <button class="act-stop bg-rose-500 hover:bg-rose-600 text-white font-bold px-5 py-3 rounded-2xl">⏹ עצור</button>
       </div>
     </section>
@@ -114,7 +122,8 @@
     <!-- סיום -->
     <section id="view-final" class="hidden glass rounded-3xl p-10 text-center">
       <div class="text-6xl mb-4">👑</div>
-      <h2 class="text-4xl font-black mb-6">אלופי הטריוויה!</h2>
+      <h2 class="text-4xl font-black mb-2">אלופי הטריוויה!</h2>
+      <p id="finalSubtitle" class="text-slate-600 font-bold mb-6"></p>
       <div id="finalList" class="space-y-3 mb-8 max-w-md mx-auto"></div>
       <button id="btnRestart" class="bg-rose-500 hover:bg-rose-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl">משחק חדש 🔄</button>
     </section>
@@ -180,6 +189,10 @@
     document.getElementById('btnRestart').onclick = () => socket.emit('host:action', { action:'restart' });
     // כפתורי "שאלה קודמת" ו"עצור" (מופיעים בכמה מסכים)
     document.querySelectorAll('.act-prev').forEach(b => b.onclick = () => socket.emit('host:action', { action:'prev' }));
+    document.querySelectorAll('.act-next').forEach(b => b.onclick = () => socket.emit('host:action', { action:'next' }));
+    document.querySelectorAll('.act-finish').forEach(b => b.onclick = () => {
+      if(confirm('לסיים את המשחק עכשיו ולהציג את התוצאות שנצברו עד כה?')) socket.emit('host:action', { action:'finish' });
+    });
     document.querySelectorAll('.act-stop').forEach(b => b.onclick = () => {
       if(confirm('לעצור את המשחק ולחזור למסך הראשי? המשחק יסתיים והניקוד יתאפס.')) socket.emit('host:action', { action:'stop' });
     });
@@ -255,6 +268,9 @@
 
     function renderFinal(g){
       const board = g.leaderboard || [];
+      const played = g.questionNumber || 0;
+      document.getElementById('finalSubtitle').innerText =
+        `שוחקו ${played} שאלות מתוך ${g.totalQuestions} · ${board.length} משתתפים`;
       document.getElementById('finalList').innerHTML = board.slice(0,5).map((p,i) =>
         `<div class="flex justify-between items-center ${i===0?'bg-yellow-100 border-2 border-yellow-400':'bg-white/80'} p-4 rounded-2xl shadow">
            <div class="flex items-center gap-3">

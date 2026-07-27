@@ -117,6 +117,14 @@ class TriviaGame {
       if (this.currentIdx > 0 && (this.phase === 'question' || this.phase === 'reveal' || this.phase === 'leaderboard')) {
         this.loadQuestion(this.currentIdx - 1);
       }
+    } else if (action === 'finish') {
+      // סיום המשחק והצגת התוצאות שנצברו עד כה
+      if (this.phase !== 'lobby' && this.phase !== 'final') {
+        this.clearTimer();
+        this.phase = 'final';
+        this.session.emit('gameover', {});
+        this.session.emit('update');
+      }
     } else if (action === 'restart' || action === 'stop') {
       // עצירת המשחק וחזרה למסך הראשי (הלובי)
       this.clearTimer();
