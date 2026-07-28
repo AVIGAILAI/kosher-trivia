@@ -69,6 +69,15 @@ export class Session extends EventEmitter {
     return this.players.get(playerId) || null;
   }
 
+  /** הסרת כל המשתתפים (בסיום משחק / משחק חדש) — כדי שהמסך והטלפונים יתנקו. */
+  clearPlayers() {
+    for (const player of this.players.values()) {
+      if (typeof this.game.onPlayerLeave === 'function') this.game.onPlayerLeave(player);
+    }
+    this.players.clear();
+    this.emit('update');
+  }
+
   /** סימון חיבור/ניתוק של שחקן (בלי להסירו מהמשחק — שורד רענון ונפילות רשת). */
   setConnected(playerId, connected) {
     const player = this.players.get(playerId);

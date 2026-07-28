@@ -15,6 +15,8 @@ import * as quizStore from './quizStore.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
 const PORT = process.env.PORT || 3000;
+// מספר הטלפון שאליו המשתתפים מחייגים (מוצג במסך המנחה). ניתן לשינוי דרך משתנה סביבה.
+const YEMOT_PHONE = process.env.YEMOT_PHONE || '0733512469';
 
 const app = express();
 const httpServer = createServer(app);
@@ -97,7 +99,7 @@ io.on('connection', (socket) => {
       attachHost(existing);
       existing.lastActive = Date.now();
       if (typeof ack === 'function') {
-        ack({ ok: true, pin: existing.pin, resumed: true, quizId: existing.quizId, state: existing.hostState() });
+        ack({ ok: true, pin: existing.pin, resumed: true, quizId: existing.quizId, phone: YEMOT_PHONE, state: existing.hostState() });
       }
       return;
     }
@@ -112,7 +114,7 @@ io.on('connection', (socket) => {
     attachHost(session);
     wireSession(session);
     if (typeof ack === 'function') {
-      ack({ ok: true, pin: session.pin, resumed: false, quizId: quiz ? quiz.id : null, state: session.hostState() });
+      ack({ ok: true, pin: session.pin, resumed: false, quizId: quiz ? quiz.id : null, phone: YEMOT_PHONE, state: session.hostState() });
     }
   });
 
@@ -134,7 +136,13 @@ io.on('connection', (socket) => {
 
   socket.on('host:action', ({ action } = {}) => {
     const session = gameManager.getSession(socket.data.pin);
-    if (session && session.hostId === socket.id) session.hostAction(action);
+    if (!session || session.hostId !== socket.id) return;
+    session.hostAction(action);
+    // "עצור" / "משחק חדש" → מוציאים את כל המשתתפים (מסך + טלפון) כדי שיבינו שהסתיים
+    if (action === 'stop' || action === 'restart') {
+      for (const p of session.playerList()) io.to(`pv-${p.id}`).emit('game:ended');
+      session.clearPlayers();
+    }
   });
 
   // --- צד שחקן (דפדפן) ---

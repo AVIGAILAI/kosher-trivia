@@ -155,6 +155,15 @@
 
     socket.on('player:state', (state) => { if(joined && state) renderView(state.view); });
 
+    // המנחה סיים/עצר את המשחק → מוציאים את המשתתף ומנקים כדי שלא יתחבר-מחדש למשחק שהסתיים
+    socket.on('game:ended', () => {
+      joined = false;
+      localStorage.removeItem('triviaPlayerPin');
+      localStorage.removeItem('triviaPlayerId');
+      document.getElementById('doneText').innerText = 'המשחק הסתיים על ידי המנחה. תודה שהשתתפת! 🎉';
+      show('done');
+    });
+
     function renderView(view){
       if(!view) return;
       const phase = view.phase;

@@ -45,6 +45,13 @@
         </div>
       </div>
 
+      <!-- מספר הטלפון לחיוג מפלאפון כשר -->
+      <div class="mt-5 bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 text-center">
+        <p class="text-sm font-bold text-slate-600 mb-1">📞 לחיוג מפלאפון כשר, התקשרו למספר:</p>
+        <span id="phoneNumber" class="text-2xl md:text-3xl font-black text-emerald-700 tracking-widest" dir="ltr">—</span>
+        <p class="text-xs text-slate-500 mt-1">והקישו את קוד המשחק</p>
+      </div>
+
       <!-- קישור הצטרפות למי שלא סורק ברקוד -->
       <div class="mt-5 bg-sky-50 border border-sky-200 rounded-2xl p-4 text-center">
         <p class="text-sm font-bold text-slate-600 mb-1">להצטרפות בדפדפן (בלי ברקוד), היכנסו לכתובת:</p>
@@ -162,6 +169,7 @@
         pin = res.pin;
         localStorage.setItem('triviaHostPin', pin);
         document.getElementById('pin').innerText = pin;
+        if(res.phone) document.getElementById('phoneNumber').innerText = res.phone;
         const joinUrl = location.origin + '/controller';
         const joinLink = document.getElementById('joinUrl');
         joinLink.innerText = joinUrl.replace(/^https?:\/\//, '');

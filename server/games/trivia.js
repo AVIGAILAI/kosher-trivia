@@ -38,6 +38,7 @@ class TriviaGame {
     this.timer = null;
     this.answers = new Map(); // playerId -> { value, timeLeft }
     this.distribution = [0, 0, 0, 0];
+    this.scored = false;
   }
 
   // --- מחזור חיים ---
@@ -63,6 +64,7 @@ class TriviaGame {
     this.currentIdx = idx;
     this.answers.clear();
     this.distribution = [0, 0, 0, 0];
+    this.scored = false;
     const q = this.questions[idx];
     this.phase = 'question';
     this.timeLeft = q.timeLimit || 20;
@@ -77,11 +79,12 @@ class TriviaGame {
     }, 1000);
   }
 
-  reveal() {
-    this.clearTimer();
+  /** חישוב ניקוד לשאלה הנוכחית — נקרא גם ב-reveal וגם במעבר ישיר לשאלה הבאה/סיום (מונע אובדן ניקוד). */
+  scoreCurrentQuestion() {
+    if (this.scored) return; // כבר נספר — מונע ספירה כפולה
     const q = this.questions[this.currentIdx];
+    if (!q) return;
     this.distribution = [0, 0, 0, 0];
-
     for (const [playerId, ans] of this.answers) {
       const player = this.session.getPlayer(playerId);
       if (!player) continue;
@@ -94,7 +97,13 @@ class TriviaGame {
         player.score += Math.round(maxPts * (0.5 + 0.5 * speedFrac));
       }
     }
+    this.scored = true;
+  }
 
+  reveal() {
+    this.clearTimer();
+    this.scoreCurrentQuestion();
+    const q = this.questions[this.currentIdx];
     this.phase = 'reveal';
     this.session.emit('reveal', { correct: q.correct, distribution: this.distribution });
     this.session.emit('update');
@@ -106,6 +115,8 @@ class TriviaGame {
       this.phase = 'leaderboard';
       this.session.emit('update');
     } else if (action === 'next') {
+      // מעבר לשאלה הבאה — אם עדיין בשלב שאלה, קודם נספר את הניקוד כדי שלא יאבד
+      if (this.phase === 'question') this.scoreCurrentQuestion();
       if (this.currentIdx >= this.questions.length - 1) {
         this.phase = 'final';
         this.session.emit('gameover', {});
@@ -123,6 +134,7 @@ class TriviaGame {
     } else if (action === 'finish') {
       // סיום המשחק והצגת התוצאות שנצברו עד כה
       if (this.phase !== 'lobby' && this.phase !== 'final') {
+        if (this.phase === 'question') this.scoreCurrentQuestion();
         this.clearTimer();
         this.phase = 'final';
         this.session.emit('gameover', {});
