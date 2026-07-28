@@ -186,6 +186,7 @@ class TriviaGame {
       view.numOptions = q ? q.options.length : 4;
       view.hasAnswered = !!ans;
       view.myAnswer = ans ? ans.value : null;
+      view.timeLeft = this.timeLeft;
       if (q) {
         view.category = q.category;
         view.questionText = q.text;

@@ -9,6 +9,7 @@ import './games/trivia.js'; // רישום סוג המשחק 'trivia'
 import { TelephonyGateway } from './telephony/gateway.js';
 import { SimulatedProvider } from './telephony/providers/simulated.js';
 import { createTwilioRouter } from './telephony/twilio.js';
+import { createYemotRouter } from './telephony/yemot.js';
 import * as quizStore from './quizStore.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,10 @@ app.get('/editor', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'editor.html')))
 
 // --- מסלול טלפוניה אמיתי (Twilio Voice webhooks) ---
 app.use('/voice', createTwilioRouter(gameManager));
+
+// --- מסלול טלפוניה אמיתי (ימות המשיח — לפלאפונים כשרים) ---
+app.use(express.urlencoded({ extended: true })); // תמיכה גם ב-POST של ימות
+app.use('/yemot', createYemotRouter(gameManager));
 
 // --- REST API לניהול מאגרי שאלות ---
 app.get('/api/quizzes', (_req, res) => res.json(quizStore.listQuizzes()));
