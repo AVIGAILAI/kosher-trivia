@@ -14,7 +14,7 @@ import { YemotRouter } from 'yemot-router2';
 export function createYemotRouter(gameManager) {
   const router = YemotRouter({
     timeout: '30m',
-    printLog: false,
+    printLog: true,
     uncaughtErrorHandler: (err, call) => {
       console.error('Yemot handler error:', err && err.message);
       try {
@@ -35,6 +35,7 @@ export function createYemotRouter(gameManager) {
     callMap.delete(callId);
   }
 
+  router.events.on('new_call', (call) => console.log('[yemot] 📞 שיחה נכנסת', call.callId, 'מ-', call.phone));
   // ניתוק שיחה ע"י המחייג → הסרת השחקן מהמשחק
   router.events.on('call_hangup', (call) => cleanup(call.callId));
 
