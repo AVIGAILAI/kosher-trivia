@@ -162,6 +162,7 @@ class TriviaGame {
       totalQuestions: this.questions.length,
       answersCount: this.answers.size,
       totalPlayers: this.session.players.size,
+      answeredIds: [...this.answers.keys()], // מי ענה על השאלה הנוכחית
       timeLeft: this.timeLeft,
       timeLimit: q ? q.timeLimit || 20 : 20,
     };

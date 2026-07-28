@@ -84,10 +84,17 @@ export function createYemotRouter(gameManager) {
 
       // שאלה פעילה שעדיין לא ענו עליה → הקראה + קליטת הקשה
       if (phase === 'question' && !v.hasAnswered) {
-        const n = v.numOptions || 4;
+        const opts = v.options || [];
+        const n = opts.length || v.numOptions || 4;
         const allowed = Array.from({ length: n }, (_, i) => i + 1);
-        const wait = Math.max(Math.min(v.timeLeft || 20, 25), 6);
-        const digit = await call.read(msg(s.promptFor(player.id)), 'tap', {
+        const wait = Math.max(Math.min(v.timeLeft || 20, 20), 6);
+        // פיצול לקטעים = הפסקות טבעיות בין השאלה לתשובות → הרבה יותר ברור להאזנה
+        const segments = [
+          { type: 'text', data: `שאלה מספר ${v.questionNumber || ''}`, removeInvalidChars: true },
+          { type: 'text', data: v.questionText || '', removeInvalidChars: true },
+          ...opts.map((o, i) => ({ type: 'text', data: `לתשובה ${o}, הקש ${i + 1}`, removeInvalidChars: true })),
+        ];
+        const digit = await call.read(segments, 'tap', {
           max_digits: 1,
           digits_allowed: allowed,
           sec_wait: wait,
@@ -105,11 +112,12 @@ export function createYemotRouter(gameManager) {
       // מצבי המתנה: לובי / חשיפה / טבלה / שאלה שכבר נענתה.
       // מקריאים את הטקסט המלא רק כשהשלב משתנה, אחרת "רגע" קצר — וממתינים ~7 שניות.
       const key = `${phase}|${v.questionNumber || 0}|${v.hasAnswered ? 1 : 0}`;
-      const text = key !== lastKey ? s.promptFor(player.id) : 'רגע, ממתינים';
+      const text = key !== lastKey ? s.promptFor(player.id) : 'רגע';
       lastKey = key;
+      // המתנה קצרה (4 שניות) כדי שברגע שהמנחה עובר לשאלה הבאה — המתקשר ישמע אותה מיד
       await call.read(msg(text), 'tap', {
         max_digits: 1,
-        sec_wait: 12,
+        sec_wait: 4,
         allow_empty: true,
         empty_val: '',
         block_asterisk_key: true,

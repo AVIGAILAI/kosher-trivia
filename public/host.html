@@ -128,6 +128,15 @@
       <div id="finalList" class="space-y-3 mb-8 max-w-md mx-auto"></div>
       <button id="btnRestart" class="bg-rose-500 hover:bg-rose-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl">משחק חדש 🔄</button>
     </section>
+
+    <!-- פאנל משתתפים חי — גלוי לאורך כל המשחק -->
+    <section id="participantsPanel" class="hidden glass rounded-3xl p-4 mt-4">
+      <div class="flex flex-wrap items-center justify-between mb-2 gap-2">
+        <h3 class="font-black text-slate-700">👥 משתתפים במשחק: <span id="ppCount">0</span></h3>
+        <span id="ppAnswered" class="text-sm font-bold text-sky-700"></span>
+      </div>
+      <div id="participantsList" class="flex flex-wrap gap-2 max-h-44 overflow-y-auto"></div>
+    </section>
   </div>
 
   <script>
@@ -224,11 +233,30 @@
       }
 
       const phase = g.phase || 'lobby';
+      // פאנל משתתפים חי — גלוי לאורך כל המשחק (בלובי הרשימה כבר מוצגת למעלה)
+      renderParticipants(state, g);
+      document.getElementById('participantsPanel').classList.toggle('hidden', phase === 'lobby');
+
       if(phase === 'lobby'){ show('lobby'); return; }
       if(phase === 'question'){ renderQuestion(g); show('question'); return; }
       if(phase === 'reveal'){ renderReveal(g); show('reveal'); return; }
       if(phase === 'leaderboard'){ renderLeaderboard(g); show('leaderboard'); return; }
       if(phase === 'final'){ renderFinal(g); show('final'); return; }
+    }
+
+    // רשימת כל המשתתפים החיה: שם, מחובר/מנותק, ומי ענה על השאלה הנוכחית
+    function renderParticipants(state, g){
+      const answered = new Set(g.answeredIds || []);
+      document.getElementById('ppCount').innerText = state.players.length;
+      const inQ = g.phase === 'question' || g.phase === 'reveal';
+      document.getElementById('ppAnswered').innerText = inQ ? `ענו ${g.answersCount} מתוך ${state.players.length}` : '';
+      const list = document.getElementById('participantsList');
+      if(state.players.length === 0){ list.innerHTML = '<p class="text-gray-500 text-sm">אין משתתפים</p>'; return; }
+      list.innerHTML = state.players.map(p => {
+        const did = answered.has(p.id);
+        return `<span class="bg-white/80 font-bold px-3 py-1.5 rounded-xl shadow-sm text-sm flex items-center gap-1 ${p.connected?'':'opacity-40'}">
+          ${p.connected?'🟢':'⚪'} ${p.kind==='phone'?'📞':'😎'} ${escapeHtml(p.name)} ${inQ?(did?'✅':'⏳'):''} <span class="text-sky-700">${p.score}</span></span>`;
+      }).join('');
     }
 
     function renderQuestion(g){
@@ -265,14 +293,16 @@
 
     function renderLeaderboard(g){
       const board = g.leaderboard || [];
-      document.getElementById('leaderboardList').innerHTML = board.slice(0,5).map((p,i) =>
-        `<div class="flex justify-between items-center bg-white/80 p-4 rounded-2xl shadow">
+      document.getElementById('leaderboardList').innerHTML =
+        `<div class="text-sm font-bold text-slate-500 mb-2">${board.length} משתתפים</div>` +
+        `<div class="space-y-2 max-h-72 overflow-y-auto">` + board.map((p,i) =>
+        `<div class="flex justify-between items-center bg-white/80 p-3 rounded-2xl shadow">
            <div class="flex items-center gap-3">
              <span class="w-8 h-8 rounded-full ${i===0?'bg-amber-400':i===1?'bg-gray-300':i===2?'bg-amber-700':'bg-sky-400'} text-white font-black flex items-center justify-center text-sm">${i+1}</span>
              <span class="font-extrabold text-lg">${p.kind==='phone'?'📞 ':''}${escapeHtml(p.name)}</span>
            </div>
            <span class="text-xl font-black text-sky-700">${p.score} נק'</span>
-         </div>`).join('') || '<p class="text-gray-500">אין עדיין תוצאות</p>';
+         </div>`).join('') + `</div>` || '<p class="text-gray-500">אין עדיין תוצאות</p>';
       document.getElementById('btnNext').innerText = g.isLast ? 'לסיום והכרזת המנצחים 🏆' : 'לשאלה הבאה ➔';
     }
 
@@ -281,14 +311,15 @@
       const played = g.questionNumber || 0;
       document.getElementById('finalSubtitle').innerText =
         `שוחקו ${played} שאלות מתוך ${g.totalQuestions} · ${board.length} משתתפים`;
-      document.getElementById('finalList').innerHTML = board.slice(0,5).map((p,i) =>
-        `<div class="flex justify-between items-center ${i===0?'bg-yellow-100 border-2 border-yellow-400':'bg-white/80'} p-4 rounded-2xl shadow">
+      document.getElementById('finalList').innerHTML =
+        `<div class="space-y-2 max-h-80 overflow-y-auto">` + board.map((p,i) =>
+        `<div class="flex justify-between items-center ${i===0?'bg-yellow-100 border-2 border-yellow-400':'bg-white/80'} p-3 rounded-2xl shadow">
            <div class="flex items-center gap-3">
-             <span class="text-2xl">${['👑','🥈','🥉','4️⃣','5️⃣'][i]||''}</span>
-             <span class="font-extrabold text-lg">${escapeHtml(p.name)}</span>
+             <span class="text-xl w-8 text-center">${['👑','🥈','🥉'][i] || (i+1)}</span>
+             <span class="font-extrabold text-lg">${p.kind==='phone'?'📞 ':''}${escapeHtml(p.name)}</span>
            </div>
            <span class="text-xl font-black text-sky-700">${p.score} נק'</span>
-         </div>`).join('');
+         </div>`).join('') + `</div>`;
     }
 
     function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }

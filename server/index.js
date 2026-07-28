@@ -205,6 +205,9 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
+// טעינת מאגרי השאלות מהאחסון הקבוע לפני שמתחילים להאזין.
+await quizStore.init();
+
 httpServer.listen(PORT, () => {
   console.log(`\n🎯 שרת הטריוויה רץ על http://localhost:${PORT}`);
   console.log(`   מסך מנחה:   http://localhost:${PORT}/`);
