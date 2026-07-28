@@ -139,10 +139,19 @@
     const views = ['lobby','question','reveal','leaderboard','final'];
     function show(view){ views.forEach(v => document.getElementById('view-'+v).classList.toggle('hidden', v!==view)); }
 
+    // מזהה יציב למנחה — נשמר בדפדפן, כדי לחזור לאותו משחק אחרי רענון/נפילת רשת
+    const HOST_TOKEN = (() => {
+      let t = localStorage.getItem('triviaHostToken');
+      if(!t){ t = 'h-' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('triviaHostToken', t); }
+      return t;
+    })();
+
     socket.on('connect', () => {
-      socket.emit('host:create', { gameType:'trivia' }, (res) => {
+      const savedPin = localStorage.getItem('triviaHostPin') || null;
+      socket.emit('host:hello', { gameType:'trivia', hostToken: HOST_TOKEN, pin: savedPin }, (res) => {
         if(!res || !res.ok) return;
         pin = res.pin;
+        localStorage.setItem('triviaHostPin', pin);
         document.getElementById('pin').innerText = pin;
         const joinUrl = location.origin + '/controller';
         const joinLink = document.getElementById('joinUrl');
@@ -210,7 +219,7 @@
         grid.innerHTML = '<p class="text-gray-500 text-sm my-3">ממתין להתחברות המשתתפים...</p>';
       } else {
         grid.innerHTML = state.players.map(p =>
-          `<span class="bg-white/80 font-bold px-3 py-1.5 rounded-xl shadow-sm text-sm flex items-center gap-1">${p.kind==='phone'?'📞':'😎'} ${escapeHtml(p.name)}</span>`
+          `<span class="bg-white/80 font-bold px-3 py-1.5 rounded-xl shadow-sm text-sm flex items-center gap-1 ${p.connected?'':'opacity-40'}">${p.connected?'🟢':'⚪'} ${p.kind==='phone'?'📞':'😎'} ${escapeHtml(p.name)}</span>`
         ).join('');
       }
 

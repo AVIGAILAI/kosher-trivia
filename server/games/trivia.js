@@ -87,8 +87,11 @@ class TriviaGame {
       if (!player) continue;
       if (ans.value >= 0 && ans.value < 4) this.distribution[ans.value]++;
       if (ans.value === q.correct) {
-        const speedBonus = (ans.timeLeft || 1) * 25;
-        player.score += 500 + speedBonus;
+        // ניקוד לפי הניקוד שנקבע לשאלה (ברירת מחדל 1000): חצי בסיס + חצי בונוס מהירות
+        const maxPts = Number.isFinite(q.points) ? q.points : 1000;
+        const tl = q.timeLimit || 20;
+        const speedFrac = Math.max(0, Math.min(1, (ans.timeLeft || 0) / tl));
+        player.score += Math.round(maxPts * (0.5 + 0.5 * speedFrac));
       }
     }
 

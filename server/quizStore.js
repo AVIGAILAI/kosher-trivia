@@ -29,12 +29,16 @@ function sanitizeQuestion(q) {
   let timeLimit = Number(q.timeLimit);
   if (!Number.isFinite(timeLimit) || timeLimit < 5) timeLimit = 20;
   if (timeLimit > 120) timeLimit = 120;
+  let points = Number(q.points);
+  if (!Number.isFinite(points) || points < 0) points = 1000;
+  if (points > 100000) points = 100000;
   return {
     category: String(q.category || 'כללי').slice(0, 40),
     text: String(q.text || '').slice(0, 300),
     options: options.map((o) => String(o).slice(0, 120)),
     correct,
     timeLimit: Math.round(timeLimit),
+    points: Math.round(points),
   };
 }
 

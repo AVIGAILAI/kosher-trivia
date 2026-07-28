@@ -109,7 +109,7 @@ export function createYemotRouter(gameManager) {
       lastKey = key;
       await call.read(msg(text), 'tap', {
         max_digits: 1,
-        sec_wait: 7,
+        sec_wait: 12,
         allow_empty: true,
         empty_val: '',
         block_asterisk_key: true,

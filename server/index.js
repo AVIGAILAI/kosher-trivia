@@ -66,6 +66,7 @@ function wireSession(session) {
   const pin = session.pin;
 
   const pushState = () => {
+    session.lastActive = Date.now();
     io.to(`host-${pin}`).emit('host:state', session.hostState());
     for (const p of session.playerList()) {
       io.to(`pv-${p.id}`).emit('player:state', session.playerView(p.id));
@@ -81,20 +82,37 @@ function wireSession(session) {
 
 io.on('connection', (socket) => {
   // --- צד מנחה ---
-  socket.on('host:create', ({ gameType = 'trivia', quizId } = {}, ack) => {
+  // host:hello — יצירת משחק חדש או חיבור-מחדש למשחק קיים (רענון/נפילת רשת).
+  // המנחה שומר hostToken+pin בדפדפן; אם הם תואמים למשחק קיים — חוזרים אליו במקום ליצור חדש.
+  const attachHost = (session) => {
+    session.hostId = socket.id;
+    socket.data.role = 'host';
+    socket.data.pin = session.pin;
+    socket.join(`host-${session.pin}`);
+  };
+  socket.on('host:hello', ({ hostToken, pin, gameType = 'trivia', quizId } = {}, ack) => {
+    // ניסיון חיבור-מחדש למשחק קיים
+    const existing = pin ? gameManager.getSession(pin) : null;
+    if (existing && hostToken && existing.hostToken === hostToken) {
+      attachHost(existing);
+      existing.lastActive = Date.now();
+      if (typeof ack === 'function') {
+        ack({ ok: true, pin: existing.pin, resumed: true, quizId: existing.quizId, state: existing.hostState() });
+      }
+      return;
+    }
+    // אחרת — יצירת משחק חדש
     const quiz = quizStore.getQuiz(quizId) || quizStore.firstQuiz();
     const session = gameManager.createSession(gameType, {
       questions: quiz ? quiz.questions : [],
       quizId: quiz ? quiz.id : null,
       quizName: quiz ? quiz.name : '',
+      hostToken: hostToken || null,
     });
-    session.hostId = socket.id;
+    attachHost(session);
     wireSession(session);
-    socket.data.role = 'host';
-    socket.data.pin = session.pin;
-    socket.join(`host-${session.pin}`);
     if (typeof ack === 'function') {
-      ack({ ok: true, pin: session.pin, quizId: quiz ? quiz.id : null, state: session.hostState() });
+      ack({ ok: true, pin: session.pin, resumed: false, quizId: quiz ? quiz.id : null, state: session.hostState() });
     }
   });
 
@@ -105,6 +123,7 @@ io.on('connection', (socket) => {
     const quiz = quizStore.getQuiz(quizId);
     if (quiz && typeof session.game.loadQuestions === 'function') {
       session.game.loadQuestions(quiz.questions, quiz.name);
+      session.quizId = quiz.id;
     }
   });
 
@@ -119,17 +138,26 @@ io.on('connection', (socket) => {
   });
 
   // --- צד שחקן (דפדפן) ---
-  socket.on('player:join', ({ pin, name } = {}, ack) => {
+  // player:join — הצטרפות חדשה או חיבור-מחדש (השחקן שומר playerId בדפדפן ושורד רענון).
+  socket.on('player:join', ({ pin, name, playerId } = {}, ack) => {
     const session = gameManager.getSession(pin);
     if (!session) {
       if (typeof ack === 'function') ack({ ok: false, error: 'קוד משחק לא קיים' });
       return;
     }
-    const player = session.addPlayer({ name, kind: 'web' });
+    let player = playerId ? session.getPlayer(playerId) : null;
+    if (player) {
+      // חיבור-מחדש: שומרים ניקוד ושם, מסמנים כמחובר
+      if (name) player.name = String(name).slice(0, 20);
+      player.connected = true;
+    } else {
+      player = session.addPlayer({ name, kind: 'web' });
+    }
     socket.data.role = 'player';
     socket.data.pin = session.pin;
     socket.data.playerId = player.id;
     socket.join(`pv-${player.id}`);
+    session.emit('update');
     if (typeof ack === 'function') {
       ack({ ok: true, playerId: player.id, name: player.name, view: session.playerView(player.id) });
     }
@@ -158,16 +186,24 @@ io.on('connection', (socket) => {
     const session = gameManager.getSession(socket.data.pin);
     if (!session) return;
     if (socket.data.role === 'player' && socket.data.playerId) {
-      session.removePlayer(socket.data.playerId);
-    } else if (socket.data.role === 'host' && session.hostId === socket.id) {
-      // מחיקת החדר בהשהיה קצרה, למקרה של רענון עמוד המנחה.
-      setTimeout(() => {
-        const s = gameManager.getSession(socket.data.pin);
-        if (s && s.hostId === socket.id) gameManager.removeSession(socket.data.pin);
-      }, 15000);
+      // לא מסירים את השחקן — רק מסמנים כמנותק, כדי לשרוד רענון/נפילת רשת.
+      session.setConnected(socket.data.playerId, false);
     }
+    // מנחה שהתנתק: לא הורסים את המשחק! הוא יחזור אליו דרך host:hello.
+    // ניקוי משחקים נטושים מתבצע ע"י sessionCleanup לפי חוסר פעילות ארוך.
   });
 });
+
+// ניקוי משחקים נטושים — כל 30 דקות, מסיר משחקים ללא פעילות מעל 3 שעות.
+const SESSION_TTL_MS = 3 * 60 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [pin, session] of gameManager.sessions) {
+    if (now - (session.lastActive || session.createdAt) > SESSION_TTL_MS) {
+      gameManager.removeSession(pin);
+    }
+  }
+}, 30 * 60 * 1000);
 
 httpServer.listen(PORT, () => {
   console.log(`\n🎯 שרת הטריוויה רץ על http://localhost:${PORT}`);

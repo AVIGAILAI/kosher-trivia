@@ -29,7 +29,10 @@ export class Session extends EventEmitter {
     this.gameType = gameType;
     this.players = new Map(); // playerId -> Player
     this.createdAt = Date.now();
+    this.lastActive = Date.now();
     this.hostId = null;
+    this.hostToken = config.hostToken || null; // מזהה יציב למנחה — מאפשר חיבור-מחדש לאותו משחק
+    this.quizId = config.quizId || null;
 
     const factory = gameFactories[gameType];
     if (!factory) throw new Error(`משחק לא מוכר: ${gameType}`);
@@ -44,6 +47,7 @@ export class Session extends EventEmitter {
       name: (name || 'שחקן').toString().slice(0, 20),
       kind, // 'web' | 'phone'
       score: 0,
+      connected: true,
       joinedAt: Date.now(),
       meta,
     };
@@ -63,6 +67,15 @@ export class Session extends EventEmitter {
 
   getPlayer(playerId) {
     return this.players.get(playerId) || null;
+  }
+
+  /** סימון חיבור/ניתוק של שחקן (בלי להסירו מהמשחק — שורד רענון ונפילות רשת). */
+  setConnected(playerId, connected) {
+    const player = this.players.get(playerId);
+    if (player) {
+      player.connected = connected;
+      this.emit('update');
+    }
   }
 
   playerList() {
@@ -96,6 +109,7 @@ export class Session extends EventEmitter {
         name: p.name,
         kind: p.kind,
         score: p.score,
+        connected: p.connected !== false,
       })),
       game: typeof this.game.hostState === 'function' ? this.game.hostState() : {},
     };

@@ -120,8 +120,10 @@
             <span class="qnum text-white font-black w-8 h-8 rounded-lg flex items-center justify-center">${i+1}</span>
             <input class="f-category bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold w-40" value="${escapeAttr(q.category)}" placeholder="קטגוריה" />
           </div>
-          <div class="flex items-center gap-2">
-            <label class="text-xs text-slate-500 font-bold">זמן:</label>
+          <div class="flex items-center gap-2 flex-wrap">
+            <label class="text-xs text-slate-500 font-bold">ניקוד:</label>
+            <input type="number" min="0" step="10" class="f-points bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold w-20 text-center" value="${q.points ?? 1000}" />
+            <label class="text-xs text-slate-500 font-bold mr-2">זמן:</label>
             <input type="number" min="5" max="120" class="f-time bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold w-16 text-center" value="${q.timeLimit}" /> <span class="text-xs text-slate-400">שנ'</span>
             <button class="f-del text-rose-500 hover:text-rose-700 font-bold text-sm mr-2">🗑️ מחק</button>
           </div>
@@ -144,6 +146,7 @@
         const i = Number(card.dataset.i);
         card.querySelector('.f-category').oninput = (e)=>{ current.questions[i].category=e.target.value; setDirty(true); };
         card.querySelector('.f-time').oninput = (e)=>{ current.questions[i].timeLimit=Number(e.target.value)||20; setDirty(true); };
+        card.querySelector('.f-points').oninput = (e)=>{ current.questions[i].points=Number(e.target.value)||0; setDirty(true); };
         card.querySelector('.f-text').oninput = (e)=>{ current.questions[i].text=e.target.value; setDirty(true); };
         card.querySelector('.f-del').onclick = ()=>{ if(confirm('למחוק את השאלה?')){ current.questions.splice(i,1); renderQuestions(); setDirty(true); } };
         card.querySelectorAll('.f-opt').forEach((inp,oi)=>{ inp.oninput=(e)=>{ current.questions[i].options[oi]=e.target.value; setDirty(true); }; });
@@ -152,7 +155,7 @@
     }
 
     $('btnAddQ').onclick = ()=>{
-      current.questions.push({ category:'כללי', text:'', options:['','','',''], correct:0, timeLimit:20 });
+      current.questions.push({ category:'כללי', text:'', options:['','','',''], correct:0, timeLimit:20, points:1000 });
       renderQuestions(); setDirty(true);
       window.scrollTo(0, document.body.scrollHeight);
     };

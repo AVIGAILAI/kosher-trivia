@@ -100,9 +100,33 @@
     const views = ['login','waiting','answer','submitted','feedback','done'];
     function show(v){ views.forEach(x => document.getElementById('view-'+x).classList.toggle('hidden', x!==v)); }
 
-    // מילוי PIN מה-URL (סריקת QR)
+    // מילוי PIN מה-URL (סריקת QR) או מהחיבור הקודם
     const urlPin = new URLSearchParams(location.search).get('pin');
     if(urlPin) document.getElementById('inPin').value = urlPin;
+    else if(localStorage.getItem('triviaPlayerPin')) document.getElementById('inPin').value = localStorage.getItem('triviaPlayerPin');
+    if(localStorage.getItem('triviaPlayerName')) document.getElementById('inName').value = localStorage.getItem('triviaPlayerName');
+
+    function saveSession(pin, name, playerId){
+      localStorage.setItem('triviaPlayerPin', pin);
+      localStorage.setItem('triviaPlayerName', name);
+      localStorage.setItem('triviaPlayerId', playerId);
+    }
+
+    // חיבור-מחדש אוטומטי: אם כבר הצטרפנו בעבר, חוזרים לאותו משחק עם אותו זיהוי (שומר ניקוד)
+    socket.on('connect', () => {
+      const pin = localStorage.getItem('triviaPlayerPin');
+      const name = localStorage.getItem('triviaPlayerName');
+      const playerId = localStorage.getItem('triviaPlayerId');
+      if(pin && playerId){
+        socket.emit('player:join', { pin, name, playerId }, (res) => {
+          if(res && res.ok){
+            joined = true;
+            document.getElementById('greeting').innerText = `שלום, ${res.name}! 👋`;
+            renderView(res.view);
+          }
+        });
+      }
+    });
 
     document.getElementById('btnJoin').onclick = join;
     document.getElementById('inName').addEventListener('keydown', e => { if(e.key==='Enter') join(); });
@@ -116,6 +140,7 @@
         if(!res || !res.ok){ err.innerText = (res && res.error) || 'שגיאת התחברות'; err.classList.remove('hidden'); return; }
         joined = true;
         err.classList.add('hidden');
+        saveSession(pin, res.name, res.playerId);
         document.getElementById('greeting').innerText = `שלום, ${res.name}! 👋`;
         renderView(res.view);
       });
