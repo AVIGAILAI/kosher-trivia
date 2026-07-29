@@ -172,7 +172,13 @@
         if(view.hasAnswered){ show('submitted'); return; }
         document.getElementById('ansQNum').innerText = view.questionNumber ? `שאלה ${view.questionNumber} מתוך ${view.totalQuestions}` : '';
         document.getElementById('ansQText').innerText = view.questionText || '';
-        (view.options||[]).forEach((opt,i)=>{ const el=document.getElementById('ansOpt'+i); if(el) el.innerText = opt; });
+        const opts = view.options || [];
+        const n = view.numOptions || opts.length || 4;
+        (opts).forEach((opt,i)=>{ const el=document.getElementById('ansOpt'+i); if(el) el.innerText = opt; });
+        // מציג רק את מספר התשובות הרלוונטי (2 לנכון/לא-נכון, 4 לרב-ברירה)
+        document.querySelectorAll('#view-answer button[data-opt]').forEach((btn,i)=>{
+          btn.style.display = (i < n) ? '' : 'none';
+        });
         show('answer');
         return;
       }

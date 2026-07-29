@@ -31,10 +31,11 @@ function newId() {
 
 /** ניקוי ואימות שאלה בודדת — מבטיח מבנה תקין לפני שמירה. */
 function sanitizeQuestion(q) {
-  const options = Array.isArray(q.options) ? q.options.slice(0, 4) : [];
-  while (options.length < 4) options.push('');
+  // תמיכה ב-2 עד 4 תשובות (2 = שאלת נכון/לא-נכון, 4 = רב-ברירה). לא פוגע בשאלות קיימות.
+  let options = Array.isArray(q.options) ? q.options.slice(0, 4).map((o) => String(o).slice(0, 120)) : [];
+  while (options.length < 2) options.push('');
   let correct = Number.isInteger(q.correct) ? q.correct : 0;
-  if (correct < 0 || correct > 3) correct = 0;
+  if (correct < 0 || correct >= options.length) correct = 0;
   let timeLimit = Number(q.timeLimit);
   if (!Number.isFinite(timeLimit) || timeLimit < 5) timeLimit = 20;
   if (timeLimit > 120) timeLimit = 120;
@@ -44,7 +45,7 @@ function sanitizeQuestion(q) {
   return {
     category: String(q.category || 'כללי').slice(0, 40),
     text: String(q.text || '').slice(0, 300),
-    options: options.map((o) => String(o).slice(0, 120)),
+    options,
     correct,
     timeLimit: Math.round(timeLimit),
     points: Math.round(points),
