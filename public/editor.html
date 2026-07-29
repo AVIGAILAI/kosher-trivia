@@ -56,12 +56,16 @@
           </div>
         </div>
 
-        <!-- שינוי זמן גורף לכל השאלות -->
+        <!-- שינוי זמן וניקוד גורף לכל השאלות -->
         <div class="flex flex-wrap items-center gap-2 mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <label class="text-sm font-bold text-slate-700">⏱️ זמן לכל השאלות יחד:</label>
+          <label class="text-sm font-bold text-slate-700">⏱️ זמן לכל השאלות:</label>
           <input id="allTime" type="number" min="5" max="120" value="50" class="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold w-20 text-center" />
-          <span class="text-xs text-slate-400">שניות</span>
-          <button id="btnApplyTime" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-1.5 rounded-lg text-sm">החל על כל השאלות</button>
+          <span class="text-xs text-slate-400">שנ'</span>
+          <button id="btnApplyTime" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-1.5 rounded-lg text-sm">החל</button>
+          <span class="mx-2 text-slate-300">|</span>
+          <label class="text-sm font-bold text-slate-700">🏆 ניקוד לכל השאלות:</label>
+          <input id="allPoints" type="number" min="0" step="10" value="1000" class="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold w-24 text-center" />
+          <button id="btnApplyPoints" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-1.5 rounded-lg text-sm">החל</button>
         </div>
 
         <div id="questions" class="space-y-4"></div>
@@ -140,7 +144,9 @@
       <div class="rounded-2xl border border-slate-200 p-4 bg-slate-50" data-i="${i}">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <span class="qnum text-white font-black w-8 h-8 rounded-lg flex items-center justify-center">${i+1}</span>
+            <button class="f-up text-slate-400 hover:text-sky-600 font-black text-lg leading-none" title="הזז מעלה">▲</button>
+            <button class="f-down text-slate-400 hover:text-sky-600 font-black text-lg leading-none" title="הזז מטה">▼</button>
+            <input class="f-pos qnum text-white font-black w-10 h-8 rounded-lg text-center border-0" type="number" min="1" max="${current.questions.length}" value="${i+1}" title="מספר מיקום — שני כדי להזיז" />
             <input class="f-category bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-bold w-40" value="${escapeAttr(q.category)}" placeholder="קטגוריה" />
             <select class="f-type bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold">
               <option value="multi" ${q.options.length > 2 ? 'selected' : ''}>רב-ברירה (4)</option>
@@ -206,7 +212,21 @@
         };
         mType.onchange = updateMedia;
         mUrl.oninput = updateMedia;
+        // הזזת השאלה למקום אחר
+        card.querySelector('.f-up').onclick = ()=> moveQuestion(i, i-1);
+        card.querySelector('.f-down').onclick = ()=> moveQuestion(i, i+1);
+        card.querySelector('.f-pos').onchange = (e)=>{ moveQuestion(i, (Number(e.target.value)||1) - 1); };
       });
+    }
+
+    function moveQuestion(from, to){
+      const n = current.questions.length;
+      to = Math.max(0, Math.min(n-1, to));
+      if(to === from){ renderQuestions(); return; }
+      const [item] = current.questions.splice(from, 1);
+      current.questions.splice(to, 0, item);
+      renderQuestions(); setDirty(true);
+      toast('מיקום השאלה עודכן');
     }
 
     $('btnAddQ').onclick = ()=>{
@@ -265,6 +285,16 @@
       current.questions.forEach(q=> q.timeLimit = t);
       renderQuestions(); setDirty(true);
       toast(`הוחל ${t} שניות על כל השאלות (לחצי "שמור")`);
+    };
+
+    // --- שינוי ניקוד גורף לכל השאלות ---
+    $('btnApplyPoints').onclick = ()=>{
+      const p = Math.max(0, Math.min(100000, Number($('allPoints').value)||0));
+      if(!current || !current.questions.length){ toast('אין שאלות'); return; }
+      if(!confirm(`להחיל ${p} נקודות על כל ${current.questions.length} השאלות?`)) return;
+      current.questions.forEach(q=> q.points = p);
+      renderQuestions(); setDirty(true);
+      toast(`הוחל ${p} נקודות על כל השאלות (לחצי "שמור")`);
     };
 
     // --- ייצוא השאלות הקיימות לאקסל ---
