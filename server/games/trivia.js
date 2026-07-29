@@ -181,6 +181,7 @@ class TriviaGame {
 
     if (q && (this.phase === 'question' || this.phase === 'reveal')) {
       base.question = { category: q.category, text: q.text, options: q.options };
+      if (q.media) base.question.media = q.media;
     }
     if (this.phase === 'reveal') {
       base.correct = q.correct;

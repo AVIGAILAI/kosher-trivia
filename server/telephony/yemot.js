@@ -87,7 +87,7 @@ export function createYemotRouter(gameManager) {
         const opts = v.options || [];
         const n = opts.length || v.numOptions || 4;
         const allowed = Array.from({ length: n }, (_, i) => i + 1);
-        const wait = Math.max(Math.min(v.timeLeft || 20, 20), 6);
+        const wait = Math.max(Math.min(v.timeLeft || 20, 55), 6);
         // פיצול לקטעים = הפסקות טבעיות בין השאלה לתשובות → הרבה יותר ברור להאזנה
         const segments = [
           { type: 'text', data: `שאלה מספר ${v.questionNumber || ''}`, removeInvalidChars: true },

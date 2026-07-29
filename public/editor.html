@@ -56,6 +56,14 @@
           </div>
         </div>
 
+        <!-- שינוי זמן גורף לכל השאלות -->
+        <div class="flex flex-wrap items-center gap-2 mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <label class="text-sm font-bold text-slate-700">⏱️ זמן לכל השאלות יחד:</label>
+          <input id="allTime" type="number" min="5" max="120" value="50" class="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold w-20 text-center" />
+          <span class="text-xs text-slate-400">שניות</span>
+          <button id="btnApplyTime" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-4 py-1.5 rounded-lg text-sm">החל על כל השאלות</button>
+        </div>
+
         <div id="questions" class="space-y-4"></div>
 
         <button id="btnAddQ" class="w-full mt-4 border-2 border-dashed border-sky-300 text-sky-700 hover:bg-sky-50 font-black py-4 rounded-2xl">＋ הוסף שאלה חדשה</button>
@@ -65,6 +73,7 @@
           <div class="flex flex-wrap items-center gap-3">
             <button id="btnImportExcel" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-xl shadow">📤 העלה שאלות מאקסל</button>
             <input id="excelFile" type="file" accept=".xlsx,.xls,.csv" class="hidden" />
+            <button id="btnExportExcel" class="bg-white border border-emerald-300 text-emerald-700 font-bold px-5 py-2.5 rounded-xl">📥 הורדת השאלות הקיימות לאקסל</button>
             <button id="btnTemplate" class="text-emerald-700 font-bold text-sm hover:underline">⬇️ הורדת תבנית אקסל לדוגמה</button>
           </div>
           <p class="text-xs text-slate-500 font-bold mt-2 leading-relaxed">
@@ -156,6 +165,15 @@
               <input class="f-opt flex-1 bg-transparent font-bold" value="${escapeAttr(opt)}" placeholder="תשובה ${LETTERS[oi]}" />
             </label>`).join('')}
         </div>
+        <div class="flex items-center gap-2 mt-3 flex-wrap">
+          <label class="text-xs text-slate-500 font-bold">🖼️ מדיה (מוצג רק במסך המנחה):</label>
+          <select class="f-media-type bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold">
+            <option value="" ${!q.media ? 'selected' : ''}>ללא</option>
+            <option value="image" ${q.media && q.media.type === 'image' ? 'selected' : ''}>תמונה</option>
+            <option value="video" ${q.media && q.media.type === 'video' ? 'selected' : ''}>סרטון</option>
+          </select>
+          <input class="f-media-url flex-1 min-w-[200px] bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm" placeholder="כתובת קובץ תמונה/סרטון (URL)" value="${q.media ? escapeAttr(q.media.url) : ''}" />
+        </div>
       </div>`;
     }
 
@@ -179,6 +197,15 @@
           }
           renderQuestions(); setDirty(true);
         };
+        const mType = card.querySelector('.f-media-type');
+        const mUrl = card.querySelector('.f-media-url');
+        const updateMedia = ()=>{
+          const t = mType.value, u = mUrl.value.trim();
+          current.questions[i].media = (t && u) ? { type:t, url:u } : null;
+          setDirty(true);
+        };
+        mType.onchange = updateMedia;
+        mUrl.oninput = updateMedia;
       });
     }
 
@@ -228,6 +255,30 @@
         toast(added ? `נטענו ${added} שאלות מהאקסל ✓ (לחצי "שמור")` : 'לא נמצאו שאלות תקינות בקובץ');
       } catch(err){ toast('שגיאה בקריאת הקובץ: '+err.message); }
       e.target.value='';
+    };
+
+    // --- שינוי זמן גורף לכל השאלות ---
+    $('btnApplyTime').onclick = ()=>{
+      const t = Math.max(5, Math.min(120, Number($('allTime').value)||50));
+      if(!current || !current.questions.length){ toast('אין שאלות'); return; }
+      if(!confirm(`להחיל ${t} שניות על כל ${current.questions.length} השאלות?`)) return;
+      current.questions.forEach(q=> q.timeLimit = t);
+      renderQuestions(); setDirty(true);
+      toast(`הוחל ${t} שניות על כל השאלות (לחצי "שמור")`);
+    };
+
+    // --- ייצוא השאלות הקיימות לאקסל ---
+    $('btnExportExcel').onclick = ()=>{
+      if(!current || !current.questions.length){ toast('אין שאלות לייצוא'); return; }
+      const header = ['שאלה','תשובה 1','תשובה 2','תשובה 3','תשובה 4','מספר התשובה הנכונה','קטגוריה','זמן','ניקוד'];
+      const rows = [header, ...current.questions.map(q=>[
+        q.text, q.options[0]||'', q.options[1]||'', q.options[2]||'', q.options[3]||'',
+        (q.correct||0)+1, q.category||'כללי', q.timeLimit||20, q.points ?? 1000
+      ])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'שאלות');
+      XLSX.writeFile(wb, (current.name||'שאלות')+'.xlsx');
     };
 
     // --- הורדת תבנית אקסל לדוגמה ---

@@ -42,7 +42,7 @@ function sanitizeQuestion(q) {
   let points = Number(q.points);
   if (!Number.isFinite(points) || points < 0) points = 1000;
   if (points > 100000) points = 100000;
-  return {
+  const clean = {
     category: String(q.category || 'כללי').slice(0, 40),
     text: String(q.text || '').slice(0, 300),
     options,
@@ -50,6 +50,11 @@ function sanitizeQuestion(q) {
     timeLimit: Math.round(timeLimit),
     points: Math.round(points),
   };
+  // מדיה אופציונלית (תמונה/סרטון) — מוצגת רק במסך המנחה
+  if (q.media && (q.media.type === 'image' || q.media.type === 'video') && q.media.url) {
+    clean.media = { type: q.media.type, url: String(q.media.url).slice(0, 500) };
+  }
+  return clean;
 }
 
 // --- Upstash Redis (REST) ---

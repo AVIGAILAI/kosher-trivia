@@ -83,6 +83,7 @@
       <div class="glass rounded-3xl p-8 text-center mb-6">
         <div id="qCategory" class="inline-block bg-sky-600 text-white px-5 py-1.5 rounded-full font-bold text-xs mb-4">קטגוריה</div>
         <h2 id="qText" class="text-2xl md:text-4xl font-black leading-relaxed mb-6">טוען שאלה...</h2>
+        <div id="qMedia" class="mb-6 flex justify-center"></div>
         <div class="w-full bg-gray-200 rounded-full h-3 mb-4 overflow-hidden"><div id="timerBar" class="bg-rose-500 h-full transition-all duration-1000 ease-linear" style="width:100%"></div></div>
         <p class="font-bold text-gray-600">נענו: <span id="answersCount" class="text-sky-700 font-black text-lg">0</span> / <span id="totalPlayers">0</span></p>
       </div>
@@ -276,6 +277,18 @@
       if(g.question){
         document.getElementById('qCategory').innerText = g.question.category;
         document.getElementById('qText').innerText = g.question.text;
+        // מדיה (תמונה/סרטון) — מוצגת רק כאן במסך המנחה
+        const mediaEl = document.getElementById('qMedia');
+        const m = g.question.media;
+        if(m && m.url){
+          if(m.type === 'video'){
+            mediaEl.innerHTML = `<video src="${escapeHtml(m.url)}" class="max-h-72 rounded-2xl shadow-lg" controls autoplay muted loop playsinline></video>`;
+          } else {
+            mediaEl.innerHTML = `<img src="${escapeHtml(m.url)}" class="max-h-72 rounded-2xl shadow-lg" alt="" />`;
+          }
+        } else {
+          mediaEl.innerHTML = '';
+        }
         document.getElementById('qOptions').innerHTML = g.question.options.map((opt,i) =>
           `<div class="glass p-5 rounded-2xl flex items-center shadow-lg">
              <span class="w-10 h-10 rounded-xl ${OPT_CLASS[i]} text-white font-black text-xl flex items-center justify-center ml-4">${OPT_LETTER[i]}</span>
