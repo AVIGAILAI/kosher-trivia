@@ -114,10 +114,11 @@ export function createYemotRouter(gameManager) {
       const key = `${phase}|${v.questionNumber || 0}|${v.hasAnswered ? 1 : 0}`;
       const text = key !== lastKey ? s.promptFor(player.id) : 'רגע';
       lastKey = key;
-      // המתנה קצרה (4 שניות) כדי שברגע שהמנחה עובר לשאלה הבאה — המתקשר ישמע אותה מיד
+      // המתנה של 9 שניות בין סבבים — מפחית משמעותית את עומס הבקשות לשרת
+      // (חשוב כשהרבה טלפונים מחוברים יחד), ועדיין קולט שאלה חדשה תוך ~9 שניות.
       await call.read(msg(text), 'tap', {
         max_digits: 1,
-        sec_wait: 4,
+        sec_wait: 9,
         allow_empty: true,
         empty_val: '',
         block_asterisk_key: true,
