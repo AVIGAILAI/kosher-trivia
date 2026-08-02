@@ -7,3 +7,7 @@ npm-debug.log*
 # קבצים רגישים — לא להעלות
 twilio_2FA_recovery_code.txt
 *recovery*.txt
+
+# קובץ מקור לוגו (כבד) — משתמשים ב-public/media/logo.jpg
+*.tif
+*.tiff

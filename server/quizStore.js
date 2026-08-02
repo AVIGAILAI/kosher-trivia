@@ -50,8 +50,8 @@ function sanitizeQuestion(q) {
     timeLimit: Math.round(timeLimit),
     points: Math.round(points),
   };
-  // מדיה אופציונלית (תמונה/סרטון) — מוצגת רק במסך המנחה
-  if (q.media && (q.media.type === 'image' || q.media.type === 'video') && q.media.url) {
+  // מדיה אופציונלית (תמונה/סרטון/הקלטה) — מוצגת/מושמעת רק במסך המנחה
+  if (q.media && ['image', 'video', 'audio'].includes(q.media.type) && q.media.url) {
     clean.media = { type: q.media.type, url: String(q.media.url).slice(0, 500) };
   }
   return clean;

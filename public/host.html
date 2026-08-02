@@ -4,25 +4,46 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>טריוויה קבוצתית — מסך מנחה</title>
+  <title>בנות לאה — טריוויה</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
   <style>
-    body { font-family: 'Rubik', sans-serif; background: linear-gradient(135deg,#06D6A0 0%,#118AB2 50%,#073B4C 100%); min-height:100vh; }
-    .glass { background: rgba(255,255,255,.92); backdrop-filter: blur(12px); box-shadow: 0 20px 40px rgba(0,0,0,.15); }
-    .opt-a{background:#EF476F}.opt-b{background:#118AB2}.opt-c{background:#FFD166;color:#073B4C}.opt-d{background:#06D6A0}
+    body { font-family: 'Rubik', sans-serif; background: linear-gradient(135deg,#7e3f9d 0%,#5a2c7d 50%,#391c55 100%); min-height:100vh; }
+    .glass { background: rgba(255,255,255,.94); backdrop-filter: blur(12px); box-shadow: 0 20px 40px rgba(0,0,0,.2); }
+    .opt-a{background:#EF476F}.opt-b{background:#3B82C4}.opt-c{background:#FFD166;color:#3a1c55}.opt-d{background:#2BB673}
+    /* שמות מתעופפים ברקע כשמשתתף עונה */
+    .flyname { position:fixed; top:0; white-space:nowrap; font-weight:900; font-size:2rem; color:rgba(255,255,255,.85); text-shadow:0 2px 8px rgba(0,0,0,.3); pointer-events:none; z-index:5; will-change:transform; animation: flyacross 4.5s linear forwards; }
+    @keyframes flyacross { 0%{ transform:translateX(-120vw); opacity:0; } 12%{opacity:1;} 88%{opacity:1;} 100%{ transform:translateX(120vw); opacity:0; } }
+    /* רצף הכרזת מנצחים */
+    .winner-pop { animation: winnerPop .6s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes winnerPop { 0%{ transform:scale(.3); opacity:0; } 100%{ transform:scale(1); opacity:1; } }
+    .pin-badge { background:#fff; color:#5a2c7d; }
   </style>
 </head>
 <body class="text-slate-800 p-4 md:p-8">
   <div class="max-w-5xl mx-auto">
-    <header class="flex items-center gap-3 mb-6 text-white">
-      <div class="w-12 h-12 bg-yellow-300 rounded-2xl flex items-center justify-center text-2xl shadow-lg">🎯</div>
-      <div>
-        <h1 class="text-2xl font-black drop-shadow">טריוויה קבוצתית</h1>
-        <p class="text-xs text-yellow-100 font-semibold">מסך מנחה — להקרנה</p>
+    <header class="flex items-center justify-between gap-3 mb-6 text-white">
+      <div class="flex items-center gap-3">
+        <div class="bg-white rounded-2xl p-1.5 shadow-lg"><img src="/media/logo.jpg" alt="בנות לאה" class="h-14 w-14 object-contain rounded-xl" /></div>
+        <div>
+          <h1 class="text-2xl font-black drop-shadow">טריוויה — בנות לאה</h1>
+          <p class="text-xs text-purple-100 font-semibold">מסך מנחה — להקרנה</p>
+        </div>
       </div>
+      <button id="btnSound" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🔊 צליל</button>
     </header>
+
+    <!-- פס עליון קבוע בזמן משחק: קוד + טלפון (למצטרפים באמצע) -->
+    <div id="gameTopbar" class="hidden flex flex-wrap items-center justify-center gap-3 mb-4 bg-white/95 rounded-2xl p-3 shadow-lg">
+      <span class="font-bold text-slate-600 text-sm">קוד המשחק:</span>
+      <span id="topPin" class="text-2xl font-black text-purple-800 tracking-widest bg-purple-50 px-4 py-1 rounded-xl border-2 border-purple-200">----</span>
+      <span class="mx-2 text-slate-300">|</span>
+      <span class="font-bold text-slate-600 text-sm">📞 לחיוג:</span>
+      <span id="topPhone" class="text-xl font-black text-emerald-700 tracking-widest" dir="ltr">—</span>
+    </div>
 
     <!-- לובי -->
     <section id="view-lobby" class="glass rounded-3xl p-8 text-center">
@@ -37,7 +58,7 @@
         </div>
         <div class="flex flex-col items-center justify-center">
           <span class="text-gray-600 font-bold text-sm mb-1">קוד המשחק (PIN):</span>
-          <div id="pin" class="text-6xl font-black text-sky-700 tracking-widest bg-yellow-100 px-8 py-3 rounded-2xl border-2 border-yellow-300 mb-4">----</div>
+          <div id="pin" class="text-6xl font-black text-purple-800 tracking-widest bg-purple-50 px-8 py-3 rounded-2xl border-2 border-purple-300 mb-4">----</div>
           <div class="flex items-center gap-3">
             <span class="text-xl font-extrabold">משתתפים:</span>
             <span id="playerCount" class="bg-rose-500 text-white text-2xl font-black px-4 py-1 rounded-full">0</span>
@@ -55,7 +76,7 @@
       <!-- קישור הצטרפות למי שלא סורק ברקוד -->
       <div class="mt-5 bg-sky-50 border border-sky-200 rounded-2xl p-4 text-center">
         <p class="text-sm font-bold text-slate-600 mb-1">להצטרפות בדפדפן (בלי ברקוד), היכנסו לכתובת:</p>
-        <a id="joinUrl" href="#" target="_blank" class="text-lg md:text-xl font-black text-sky-700 break-all hover:underline">—</a>
+        <a id="joinUrl" href="#" target="_blank" class="text-lg md:text-xl font-black text-purple-800 break-all hover:underline">—</a>
         <p class="text-xs text-slate-500 mt-1">ושם הקישו את קוד המשחק</p>
       </div>
 
@@ -81,11 +102,11 @@
         <div class="flex items-center gap-2 bg-black/30 px-5 py-2 rounded-xl"><span>⏱️</span><span id="timer" class="text-3xl font-black text-yellow-300">20</span></div>
       </div>
       <div class="glass rounded-3xl p-8 text-center mb-6">
-        <div id="qCategory" class="inline-block bg-sky-600 text-white px-5 py-1.5 rounded-full font-bold text-xs mb-4">קטגוריה</div>
+        <div id="qCategory" class="inline-block bg-purple-700 text-white px-5 py-1.5 rounded-full font-bold text-xs mb-4">קטגוריה</div>
         <h2 id="qText" class="text-2xl md:text-4xl font-black leading-relaxed mb-6">טוען שאלה...</h2>
         <div id="qMedia" class="mb-6 flex justify-center"></div>
         <div class="w-full bg-gray-200 rounded-full h-3 mb-4 overflow-hidden"><div id="timerBar" class="bg-rose-500 h-full transition-all duration-1000 ease-linear" style="width:100%"></div></div>
-        <p class="font-bold text-gray-600">נענו: <span id="answersCount" class="text-sky-700 font-black text-lg">0</span> / <span id="totalPlayers">0</span></p>
+        <p class="font-bold text-gray-600">נענו: <span id="answersCount" class="text-purple-800 font-black text-lg">0</span> / <span id="totalPlayers">0</span></p>
       </div>
       <div id="qOptions" class="grid md:grid-cols-2 gap-4"></div>
       <div class="flex flex-wrap justify-center gap-3 mt-5">
@@ -130,18 +151,23 @@
 
     <!-- סיום -->
     <section id="view-final" class="hidden glass rounded-3xl p-10 text-center">
-      <div class="text-6xl mb-4">👑</div>
-      <h2 class="text-4xl font-black mb-2">אלופי הטריוויה!</h2>
+      <h2 class="text-4xl font-black mb-2">🎉 אלופות הטריוויה! 🎉</h2>
       <p id="finalSubtitle" class="text-slate-600 font-bold mb-6"></p>
-      <div id="finalList" class="space-y-3 mb-8 max-w-md mx-auto"></div>
-      <button id="btnRestart" class="bg-rose-500 hover:bg-rose-600 text-white font-black text-2xl px-10 py-4 rounded-2xl shadow-xl">משחק חדש 🔄</button>
+      <!-- רצף הכרזה מדורג -->
+      <div id="winnersStage" class="min-h-[220px] flex flex-col items-center justify-center gap-4 mb-6"></div>
+      <!-- כל המשתתפים (מוסתר עד לחיצה — נשמר כמו שביקשת) -->
+      <div id="finalList" class="space-y-3 mb-6 max-w-md mx-auto hidden"></div>
+      <div class="flex flex-wrap justify-center gap-3">
+        <button id="btnShowAll" class="bg-purple-600 hover:bg-purple-700 text-white font-bold px-6 py-3 rounded-2xl shadow">📋 הצג את כל המשתתפים</button>
+        <button id="btnRestart" class="bg-rose-500 hover:bg-rose-600 text-white font-black text-xl px-8 py-3 rounded-2xl shadow-xl">משחק חדש 🔄</button>
+      </div>
     </section>
 
     <!-- פאנל משתתפים חי — גלוי לאורך כל המשחק -->
     <section id="participantsPanel" class="hidden glass rounded-3xl p-4 mt-4">
       <div class="flex flex-wrap items-center justify-between mb-2 gap-2">
         <h3 class="font-black text-slate-700">👥 משתתפים במשחק: <span id="ppCount">0</span></h3>
-        <span id="ppAnswered" class="text-sm font-bold text-sky-700"></span>
+        <span id="ppAnswered" class="text-sm font-bold text-purple-800"></span>
       </div>
       <div id="participantsList" class="flex flex-wrap gap-2 max-h-44 overflow-y-auto"></div>
     </section>
@@ -155,6 +181,52 @@
 
     const views = ['lobby','question','reveal','leaderboard','final'];
     function show(view){ views.forEach(v => document.getElementById('view-'+v).classList.toggle('hidden', v!==view)); }
+
+    // ===== צליל: מתח בזמן שאלה + תרועת ניצחון =====
+    let audioCtx = null, suspenseTimer = null, soundOn = true;
+    function ensureAudio(){ try{ if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); }catch(e){} }
+    function beep(freq, dur=0.15, vol=0.14, type='sine', when=0){
+      if(!soundOn || !audioCtx) return;
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type=type; o.frequency.value=freq; o.connect(g); g.connect(audioCtx.destination);
+      const t=audioCtx.currentTime+when;
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.start(t); o.stop(t+dur+0.02);
+    }
+    function startSuspense(){
+      stopSuspense(); if(!soundOn) return; ensureAudio();
+      let beat=0;
+      suspenseTimer=setInterval(()=>{ beep(beat%2===0?294:349, 0.16, 0.10, 'sine'); beat++; }, 650); // טיק-טוק עדין
+    }
+    function stopSuspense(){ if(suspenseTimer){ clearInterval(suspenseTimer); suspenseTimer=null; } }
+    function fanfare(){
+      if(!soundOn) return; ensureAudio();
+      const notes=[392,523,659,784,1047]; // דו-מול-סול עולה — תרועה
+      notes.forEach((f,i)=> beep(f, 0.35, 0.18, 'triangle', i*0.14));
+      beep(1319,0.5,0.18,'triangle',notes.length*0.14);
+    }
+    function chime(){ if(!soundOn) return; ensureAudio(); [523,659,784].forEach((f,i)=>beep(f,0.25,0.14,'sine',i*0.09)); }
+
+    document.getElementById('btnSound').onclick = () => {
+      soundOn = !soundOn;
+      document.getElementById('btnSound').innerText = soundOn ? '🔊 צליל' : '🔇 מושתק';
+      if(!soundOn) stopSuspense(); else ensureAudio();
+    };
+
+    // ===== שמות מתעופפים כשמשתתף עונה =====
+    function flyName(name){
+      const el = document.createElement('div');
+      el.className = 'flyname';
+      el.textContent = '✋ ' + name;
+      el.style.top = (8 + Math.random()*78) + 'vh';
+      el.style.animationDuration = (3.8 + Math.random()*1.6) + 's';
+      document.body.appendChild(el);
+      setTimeout(()=> el.remove(), 5600);
+    }
+    let prevAnswered = new Set();
+    let lastQNumForFly = -1;
+    let lastPhase = null;
 
     // מזהה יציב למנחה — נשמר בדפדפן, כדי לחזור לאותו משחק אחרי רענון/נפילת רשת
     const HOST_TOKEN = (() => {
@@ -170,7 +242,8 @@
         pin = res.pin;
         localStorage.setItem('triviaHostPin', pin);
         document.getElementById('pin').innerText = pin;
-        if(res.phone) document.getElementById('phoneNumber').innerText = res.phone;
+        document.getElementById('topPin').innerText = pin;
+        if(res.phone){ document.getElementById('phoneNumber').innerText = res.phone; document.getElementById('topPhone').innerText = res.phone; }
         const joinUrl = location.origin + '/controller';
         const joinLink = document.getElementById('joinUrl');
         joinLink.innerText = joinUrl.replace(/^https?:\/\//, '');
@@ -210,7 +283,8 @@
       new QRCode(el, { text:url, width:140, height:140, colorDark:'#073B4C', colorLight:'#ffffff' });
     }
 
-    document.getElementById('btnStart').onclick = () => socket.emit('host:start');
+    document.getElementById('btnStart').onclick = () => { ensureAudio(); socket.emit('host:start'); };
+    document.getElementById('btnShowAll').onclick = () => document.getElementById('finalList').classList.toggle('hidden');
     document.getElementById('btnSkip').onclick = () => socket.emit('host:action', { action:'skip' });
     document.getElementById('btnLeaderboard').onclick = () => socket.emit('host:action', { action:'leaderboard' });
     document.getElementById('btnNext').onclick = () => socket.emit('host:action', { action:'next' });
@@ -242,15 +316,37 @@
       }
 
       const phase = g.phase || 'lobby';
-      // פאנל משתתפים חי — גלוי לאורך כל המשחק (בלובי הרשימה כבר מוצגת למעלה)
+      // פאנל משתתפים + פס עליון (קוד+טלפון) גלויים לאורך כל המשחק
       renderParticipants(state, g);
       document.getElementById('participantsPanel').classList.toggle('hidden', phase === 'lobby');
+      document.getElementById('gameTopbar').classList.toggle('hidden', phase === 'lobby');
 
-      if(phase === 'lobby'){ show('lobby'); return; }
-      if(phase === 'question'){ renderQuestion(g); show('question'); return; }
-      if(phase === 'reveal'){ renderReveal(g); show('reveal'); return; }
-      if(phase === 'leaderboard'){ renderLeaderboard(g); show('leaderboard'); return; }
-      if(phase === 'final'){ renderFinal(g); show('final'); return; }
+      // שמות מתעופפים: כל משתתף חדש שענה על השאלה הנוכחית
+      if(phase === 'question'){
+        if(g.questionNumber !== lastQNumForFly){ prevAnswered = new Set(); lastQNumForFly = g.questionNumber; }
+        (g.answeredIds||[]).forEach(id => {
+          if(!prevAnswered.has(id)){
+            prevAnswered.add(id);
+            const p = state.players.find(x=>x.id===id);
+            if(p){ flyName(p.name); beep(880,0.08,0.08,'sine'); }
+          }
+        });
+      }
+
+      // צליל מתח: פועל רק בשלב השאלה
+      if(phase === 'question' && lastPhase !== 'question'){ startSuspense(); }
+      if(phase !== 'question'){ stopSuspense(); }
+      if(phase === 'reveal' && lastPhase !== 'reveal'){ chime(); }
+
+      if(phase === 'lobby'){ show('lobby'); lastPhase = phase; return; }
+      if(phase === 'question'){ renderQuestion(g); show('question'); lastPhase = phase; return; }
+      if(phase === 'reveal'){ renderReveal(g); show('reveal'); lastPhase = phase; return; }
+      if(phase === 'leaderboard'){ renderLeaderboard(g); show('leaderboard'); lastPhase = phase; return; }
+      if(phase === 'final'){
+        const enteringFinal = lastPhase !== 'final';
+        renderFinal(g, enteringFinal);
+        show('final'); lastPhase = phase; return;
+      }
     }
 
     // רשימת כל המשתתפים החיה: שם, מחובר/מנותק, ומי ענה על השאלה הנוכחית
@@ -264,7 +360,7 @@
       list.innerHTML = state.players.map(p => {
         const did = answered.has(p.id);
         return `<span class="bg-white/80 font-bold px-3 py-1.5 rounded-xl shadow-sm text-sm flex items-center gap-1 ${p.connected?'':'opacity-40'}">
-          ${p.connected?'🟢':'⚪'} ${p.kind==='phone'?'📞':'😎'} ${escapeHtml(p.name)} ${inQ?(did?'✅':'⏳'):''} <span class="text-sky-700">${p.score}</span></span>`;
+          ${p.connected?'🟢':'⚪'} ${p.kind==='phone'?'📞':'😎'} ${escapeHtml(p.name)} ${inQ?(did?'✅':'⏳'):''} <span class="text-purple-800">${p.score}</span></span>`;
       }).join('');
     }
 
@@ -283,6 +379,8 @@
         if(m && m.url){
           if(m.type === 'video'){
             mediaEl.innerHTML = `<video src="${escapeHtml(m.url)}" class="max-h-72 rounded-2xl shadow-lg" controls autoplay muted loop playsinline></video>`;
+          } else if(m.type === 'audio'){
+            mediaEl.innerHTML = `<div class="bg-purple-50 rounded-2xl p-5 shadow"><div class="text-4xl mb-2">🎧</div><audio src="${escapeHtml(m.url)}" controls autoplay class="w-72"></audio></div>`;
           } else {
             mediaEl.innerHTML = `<img src="${escapeHtml(m.url)}" class="max-h-72 rounded-2xl shadow-lg" alt="" />`;
           }
@@ -322,25 +420,54 @@
              <span class="w-8 h-8 rounded-full ${i===0?'bg-amber-400':i===1?'bg-gray-300':i===2?'bg-amber-700':'bg-sky-400'} text-white font-black flex items-center justify-center text-sm">${i+1}</span>
              <span class="font-extrabold text-lg">${p.kind==='phone'?'📞 ':''}${escapeHtml(p.name)}</span>
            </div>
-           <span class="text-xl font-black text-sky-700">${p.score} נק'</span>
+           <span class="text-xl font-black text-purple-800">${p.score} נק'</span>
          </div>`).join('') + `</div>` || '<p class="text-gray-500">אין עדיין תוצאות</p>';
       document.getElementById('btnNext').innerText = g.isLast ? 'לסיום והכרזת המנצחים 🏆' : 'לשאלה הבאה ➔';
     }
 
-    function renderFinal(g){
+    function renderFinal(g, entering){
       const board = g.leaderboard || [];
       const played = g.questionNumber || 0;
       document.getElementById('finalSubtitle').innerText =
-        `שוחקו ${played} שאלות מתוך ${g.totalQuestions} · ${board.length} משתתפים`;
+        `שוחקו ${played} שאלות מתוך ${g.totalQuestions} · ${board.length} משתתפות`;
+      // כל המשתתפות — מוכן ומוסתר עד לחיצה על הכפתור (נשמר כפי שביקשת)
       document.getElementById('finalList').innerHTML =
+        `<div class="text-sm font-bold text-slate-500 mb-2">כל המשתתפות (${board.length}):</div>` +
         `<div class="space-y-2 max-h-80 overflow-y-auto">` + board.map((p,i) =>
         `<div class="flex justify-between items-center ${i===0?'bg-yellow-100 border-2 border-yellow-400':'bg-white/80'} p-3 rounded-2xl shadow">
            <div class="flex items-center gap-3">
              <span class="text-xl w-8 text-center">${['👑','🥈','🥉'][i] || (i+1)}</span>
              <span class="font-extrabold text-lg">${p.kind==='phone'?'📞 ':''}${escapeHtml(p.name)}</span>
            </div>
-           <span class="text-xl font-black text-sky-700">${p.score} נק'</span>
+           <span class="text-xl font-black text-purple-800">${p.score} נק'</span>
          </div>`).join('') + `</div>`;
+      // רצף ההכרזה מופעל רק בכניסה לשלב הסיום (לא בכל עדכון)
+      if(entering){ document.getElementById('finalList').classList.add('hidden'); runWinnersReveal(board); }
+    }
+
+    function medalRow(p, emoji, label, big){
+      return `<div class="winner-pop ${big?'text-3xl md:text-4xl':'text-xl md:text-2xl'} font-black flex flex-wrap items-center justify-center gap-2">
+        <span>${emoji}</span>
+        <span class="${big?'text-yellow-600':'text-slate-800'}">${label}:</span>
+        <span class="${big?'text-purple-800':'text-slate-800'}">${p?escapeHtml(p.name):'—'}</span>
+        ${p?`<span class="text-purple-600 text-lg">(${p.score} נק')</span>`:''}
+      </div>`;
+    }
+    function runWinnersReveal(board){
+      const stage=document.getElementById('winnersStage');
+      stage.innerHTML='';
+      if(!board.length){ stage.innerHTML='<p class="text-slate-500 font-bold">אין עדיין תוצאות</p>'; return; }
+      const rows=document.createElement('div');
+      rows.className='flex flex-col items-center gap-4 w-full';
+      stage.appendChild(rows);
+      const add=(html)=>{ const d=document.createElement('div'); d.innerHTML=html.trim(); rows.prepend(d.firstElementChild); };
+      const build=document.getElementById('winnersStage');
+      let building=true; build.dataset.run=(Date.now());
+      const runId=build.dataset.run;
+      const still=()=> build.dataset.run===runId; // ביטול אם התחיל רצף חדש
+      if(board[2]) setTimeout(()=>{ if(still()){ add(medalRow(board[2],'🥉','מקום שלישי',false)); chime(); } }, 500);
+      if(board[1]) setTimeout(()=>{ if(still()){ add(medalRow(board[1],'🥈','מקום שני',false)); chime(); } }, 2500);
+      setTimeout(()=>{ if(still() && board[0]){ add(medalRow(board[0],'👑','מקום ראשון',true)); fanfare(); try{ confetti({particleCount:180,spread:90,origin:{y:.6}}); setTimeout(()=>confetti({particleCount:140,spread:120,origin:{y:.5}}),450); }catch(e){} } }, 4500);
     }
 
     function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }

@@ -31,7 +31,8 @@ export function createYemotRouter(gameManager) {
     const rec = callMap.get(callId);
     if (!rec) return;
     const session = gameManager.getSession(rec.pin);
-    if (session && rec.playerId) session.removePlayer(rec.playerId);
+    // לא מסירים את השחקן — רק מסמנים כמנותק, כדי לשמור את הניקוד לחזרה
+    if (session && rec.playerId) session.setConnected(rec.playerId, false);
     callMap.delete(callId);
   }
 
@@ -62,10 +63,18 @@ export function createYemotRouter(gameManager) {
       return call.id_list_message(msg('לא הצלחנו לחבר אתכם למשחק. נסו שוב מאוחר יותר. להתראות'));
     }
 
-    // 2. הצטרפות כשחקן טלפון
-    const last4 = String(call.phone || '').replace(/\D/g, '').slice(-4) || '';
+    // 2. הצטרפות כשחקן טלפון — אם המספר כבר שיחק (ונפל), חוזרים לאותו שחקן ושומרים ניקוד
+    const digits = String(call.phone || '').replace(/\D/g, '');
+    const last4 = digits.slice(-4) || '';
     const name = last4 ? 'פלאפון ' + last4 : 'מתקשר';
-    const player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId } });
+    let player = digits
+      ? session.playerList().find((p) => p.kind === 'phone' && p.meta && p.meta.phone === digits)
+      : null;
+    if (player) {
+      session.setConnected(player.id, true); // חזר למשחק — הניקוד נשמר, והמסך מתעדכן
+    } else {
+      player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits } });
+    }
     callMap.set(call.callId, { pin: session.pin, playerId: player.id });
 
     // 3. לולאת המשחק — מסונכרנת עם קצב המנחה

@@ -8,7 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
   <style>
-    body { font-family:'Rubik',sans-serif; background:linear-gradient(135deg,#06D6A0 0%,#118AB2 50%,#073B4C 100%); min-height:100vh; }
+    body { font-family:'Rubik',sans-serif; background:linear-gradient(135deg,#7e3f9d 0%,#5a2c7d 50%,#391c55 100%); min-height:100vh; }
     .card { background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.12); }
     .ans-correct { background:#dcfce7 !important; border-color:#22c55e !important; }
     input:focus, textarea:focus { outline:none; }
@@ -177,6 +177,7 @@
             <option value="" ${!q.media ? 'selected' : ''}>ללא</option>
             <option value="image" ${q.media && q.media.type === 'image' ? 'selected' : ''}>תמונה</option>
             <option value="video" ${q.media && q.media.type === 'video' ? 'selected' : ''}>סרטון</option>
+            <option value="audio" ${q.media && q.media.type === 'audio' ? 'selected' : ''}>הקלטה/אודיו</option>
           </select>
           <input class="f-media-url flex-1 min-w-[200px] bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm" placeholder="כתובת קובץ תמונה/סרטון (URL)" value="${q.media ? escapeAttr(q.media.url) : ''}" />
         </div>
