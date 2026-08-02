@@ -1,4 +1,5 @@
 import * as quizStore from '../quizStore.js';
+import { KEYPAD_INSTRUCTIONS, decodeHebrewName } from './hebrewKeypad.js';
 
 /**
  * שער טלפוני גנרי (IVR) — בלתי-תלוי בספק.
@@ -48,6 +49,7 @@ export class TelephonyGateway {
     if (!call) return;
     digit = String(digit);
     if (call.state === 'pin') return this.handlePinDigit(call, digit);
+    if (call.state === 'nameEntry') return this.handleNameDigit(call, digit);
     if (call.state === 'game') return this.handleGameDigit(call, digit);
   }
 
@@ -79,10 +81,40 @@ export class TelephonyGateway {
     const player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits } });
     call.session = session;
     call.playerId = player.id;
+    // מחייגת חדשה שאינה ברשימה — מציעים לה להקליד את שמה במקשים; אחרת ישר למשחק.
+    if (!rosterName) {
+      call.state = 'nameEntry';
+      call.nameBuffer = '';
+      this.provider.say(call.callId, 'לא זוהית ברשימת השמות. ' + KEYPAD_INSTRUCTIONS);
+      this.provider.gather(call.callId, { hint: 'הקלד/י את שמך ואז סולמית (#)' });
+      return;
+    }
     call.state = 'game';
     this.subscribe(call);
     // מכריזים על המצב הנוכחי (לובי, או שאלה אם המשחק כבר רץ).
     this.announcePhase(call);
+  }
+
+  /** קליטת הקלדת שם במקשים (מחייגת שאינה ברשימה). מסיימים בסולמית. */
+  handleNameDigit(call, digit) {
+    if (digit === '*') { // מחיקה — מתחילים מחדש
+      call.nameBuffer = '';
+      this.provider.say(call.callId, 'נמחק. הקלד/י את שמך מחדש.');
+      return;
+    }
+    if (digit === '#') { // סיום
+      const decoded = decodeHebrewName(call.nameBuffer || '');
+      if (decoded && call.session) {
+        const p = call.session.getPlayer(call.playerId);
+        if (p) { p.name = decoded; call.session.emit('update'); }
+        this.provider.say(call.callId, 'שמך נקלט: ' + decoded);
+      }
+      call.state = 'game';
+      this.subscribe(call);
+      this.announcePhase(call);
+      return;
+    }
+    if (/^[0-9]$/.test(digit)) call.nameBuffer += digit;
   }
 
   subscribe(call) {

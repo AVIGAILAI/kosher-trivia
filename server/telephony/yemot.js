@@ -1,5 +1,6 @@
 import { YemotRouter } from 'yemot-router2';
 import * as quizStore from '../quizStore.js';
+import { KEYPAD_INSTRUCTIONS, decodeHebrewName } from './hebrewKeypad.js';
 
 /**
  * מתאם "ימות המשיח" — מסלול טלפוניה אמיתי לפלאפונים כשרים.
@@ -43,6 +44,38 @@ export function createYemotRouter(gameManager) {
 
   const msg = (text) => [{ type: 'text', data: text, removeInvalidChars: true }];
 
+  /**
+   * דיאלוג הקלדת שם במקשים — למחייגת שאינה ברשימת השמות.
+   * מציע להקליד או לדלג; מקריא את השם שנקלט לאישור. מחזיר '' אם דילגה/נכשל.
+   */
+  async function askNameByKeypad(call) {
+    try {
+      const choice = await call.read(
+        msg('לא זוהית ברשימת השמות. להקלדת שמך הקישי 1. להמשך בלי שם הקישי 2'),
+        'tap',
+        { max_digits: 1, digits_allowed: [1, 2], sec_wait: 8, allow_empty: true, empty_val: '2', block_asterisk_key: true }
+      );
+      if (String(choice) !== '1') return '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const typed = await call.read(msg(KEYPAD_INSTRUCTIONS), 'tap', {
+          max_digits: 40, sec_wait: 8, allow_empty: true, empty_val: '',
+        });
+        const decoded = decodeHebrewName(String(typed || ''));
+        if (!decoded) {
+          if (attempt < 2) await call.read(msg('לא נקלט שם. ננסה שוב'), 'tap', { max_digits: 1, sec_wait: 2, allow_empty: true, empty_val: '' });
+          continue;
+        }
+        const confirm = await call.read(
+          msg('השם שהקלדת: ' + decoded + '. אם נכון הקישי 1, לתיקון הקישי 2'),
+          'tap',
+          { max_digits: 1, digits_allowed: [1, 2], sec_wait: 8, allow_empty: true, empty_val: '1', block_asterisk_key: true }
+        );
+        if (String(confirm) !== '2') return decoded;
+      }
+    } catch { /* השיחה נותקה באמצע — ממשיכים בשם ברירת מחדל */ }
+    return '';
+  }
+
   router.get('/', async (call) => {
     // 1. קליטת קוד המשחק (עד 3 ניסיונות)
     let session = null;
@@ -69,7 +102,7 @@ export function createYemotRouter(gameManager) {
     const last4 = digits.slice(-4) || '';
     // שם אמיתי מרשימת המורה לפי מספר הטלפון; אם אין — "פלאפון XXXX"
     const rosterName = quizStore.lookupName(call.phone);
-    const name = rosterName || (last4 ? 'פלאפון ' + last4 : 'מתקשר');
+    const fallbackName = last4 ? 'פלאפון ' + last4 : 'מתקשר';
     let player = digits
       ? session.playerList().find((p) => p.kind === 'phone' && p.meta && p.meta.phone === digits)
       : null;
@@ -77,6 +110,12 @@ export function createYemotRouter(gameManager) {
       if (rosterName) player.name = rosterName; // עדכון לשם האמיתי אם נוסף לרשימה בינתיים
       session.setConnected(player.id, true); // חזר למשחק — הניקוד נשמר, והמסך מתעדכן
     } else {
+      // מחייגת חדשה שאינה ברשימה — מציעים לה להקליד את שמה במקשים
+      let name = rosterName || fallbackName;
+      if (!rosterName) {
+        const typed = await askNameByKeypad(call);
+        if (typed) name = typed;
+      }
       player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits } });
     }
     callMap.set(call.callId, { pin: session.pin, playerId: player.id });
