@@ -8,6 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
   <style>
@@ -159,6 +160,7 @@
       <div id="finalList" class="space-y-3 mb-6 max-w-md mx-auto hidden"></div>
       <div class="flex flex-wrap justify-center gap-3">
         <button id="btnShowAll" class="bg-purple-600 hover:bg-purple-700 text-white font-bold px-6 py-3 rounded-2xl shadow">📋 הצג את כל המשתתפים</button>
+        <button id="btnExport" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-2xl shadow">📊 ייצוא תשובות לאקסל</button>
         <button id="btnRestart" class="bg-rose-500 hover:bg-rose-600 text-white font-black text-xl px-8 py-3 rounded-2xl shadow-xl">משחק חדש 🔄</button>
       </div>
     </section>
@@ -196,8 +198,18 @@
     }
     function startSuspense(){
       stopSuspense(); if(!soundOn) return; ensureAudio();
-      let beat=0;
-      suspenseTimer=setInterval(()=>{ beep(beat%2===0?294:349, 0.16, 0.10, 'sine'); beat++; }, 650); // טיק-טוק עדין
+      // מוזיקת מתח אמיתית: אוסטינטו במינור (תבנית מתנדנדת "מחשבתית") + פעימת בס נמוכה,
+      // בסגנון מוזיקת ספירה-לאחור של משחקי טריוויה. לא טיק-טוק — לחן מתמשך שיוצר מתח.
+      const melody = [220.00, 261.63, 329.63, 261.63, 233.08, 277.18, 349.23, 277.18]; // לָה דוֹ מִי דוֹ · סִי♭ רֵ פָה רֵ
+      let step = 0;
+      const STEP_MS = 260;
+      suspenseTimer = setInterval(() => {
+        const i = step % melody.length;
+        beep(melody[i], 0.22, 0.055, 'triangle');            // קו הלחן המתוח
+        if(i % 2 === 0) beep(melody[i] / 2, 0.30, 0.05, 'sine'); // הרמוניה נמוכה מתחת
+        if(i === 0 || i === 4) beep(110, 0.16, 0.09, 'sine');    // פעימת בס — כמו דופק
+        step++;
+      }, STEP_MS);
     }
     function stopSuspense(){ if(suspenseTimer){ clearInterval(suspenseTimer); suspenseTimer=null; } }
     function fanfare(){
@@ -285,6 +297,60 @@
 
     document.getElementById('btnStart').onclick = () => { ensureAudio(); socket.emit('host:start'); };
     document.getElementById('btnShowAll').onclick = () => document.getElementById('finalList').classList.toggle('hidden');
+    document.getElementById('btnExport').onclick = exportToExcel;
+
+    // ייצוא לאקסל: מבקש מהשרת את כל תשובות המשחק ובונה קובץ xlsx להורדה.
+    function exportToExcel(){
+      const btn = document.getElementById('btnExport');
+      const orig = btn.innerText; btn.disabled = true; btn.innerText = 'מכין קובץ...';
+      socket.emit('host:export', {}, (res) => {
+        btn.disabled = false; btn.innerText = orig;
+        if(!res || !res.ok || !res.data){ alert('לא הצלחתי להכין את הקובץ'); return; }
+        try { buildWorkbook(res.data); }
+        catch(e){ console.error(e); alert('שגיאה בבניית הקובץ: ' + e.message); }
+      });
+    }
+
+    function buildWorkbook(data){
+      if(typeof XLSX === 'undefined'){ alert('ספריית האקסל לא נטענה — בדקי חיבור לאינטרנט'); return; }
+      const qs = data.questions || [];
+      // גיליון 1 — סיכום: דירוג, שם, טלפון, אופן השתתפות, ניקוד כולל, כמה נכונות
+      const summary = [['דירוג','שם','טלפון','אופן','ניקוד כולל','תשובות נכונות']];
+      (data.players||[]).forEach(p => {
+        const correct = (p.answers||[]).filter(a => a.correct === true).length;
+        summary.push([ p.rank, p.name, p.phone || '', p.kind==='phone'?'טלפון':'דפדפן', p.score, correct + '/' + qs.length ]);
+      });
+      // גיליון 2 — פירוט מלא: שורה לכל שחקן, עמודה לכל שאלה (התשובה שנתן) + ✓/✗
+      const header = ['שם','טלפון','ניקוד כולל'];
+      qs.forEach((q,i) => header.push('ש' + (q.qNum||i+1) + ': ' + q.text));
+      const detail = [header];
+      (data.players||[]).forEach(p => {
+        const row = [ p.name, p.phone || '', p.score ];
+        (p.answers||[]).forEach(a => {
+          if(a.answerText === '' && a.correct === null) row.push('—'); // לא ענתה
+          else row.push((a.correct ? '✓ ' : '✗ ') + a.answerText + ' (' + a.points + ')');
+        });
+        detail.push(row);
+      });
+      // גיליון 3 — מפתח השאלות והתשובות הנכונות
+      const key = [['#','שאלה','תשובה נכונה']];
+      qs.forEach((q,i) => key.push([ q.qNum || i+1, q.text, q.correctText ]));
+
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.aoa_to_sheet(summary);
+      ws1['!cols'] = [{wch:7},{wch:20},{wch:14},{wch:9},{wch:12},{wch:14}];
+      XLSX.utils.book_append_sheet(wb, ws1, 'סיכום');
+      const ws2 = XLSX.utils.aoa_to_sheet(detail);
+      ws2['!cols'] = [{wch:20},{wch:14},{wch:12}].concat(qs.map(()=>({wch:28})));
+      XLSX.utils.book_append_sheet(wb, ws2, 'פירוט תשובות');
+      const ws3 = XLSX.utils.aoa_to_sheet(key);
+      ws3['!cols'] = [{wch:5},{wch:50},{wch:24}];
+      XLSX.utils.book_append_sheet(wb, ws3, 'מפתח שאלות');
+
+      const stamp = new Date().toISOString().slice(0,16).replace('T','_').replace(/:/g,'-');
+      const safeName = (data.quizName || 'טריוויה').replace(/[\\/:*?"<>|]/g,'');
+      XLSX.writeFile(wb, 'תוצאות_' + safeName + '_' + stamp + '.xlsx');
+    }
     document.getElementById('btnSkip').onclick = () => socket.emit('host:action', { action:'skip' });
     document.getElementById('btnLeaderboard').onclick = () => socket.emit('host:action', { action:'leaderboard' });
     document.getElementById('btnNext').onclick = () => socket.emit('host:action', { action:'next' });

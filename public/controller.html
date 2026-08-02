@@ -46,6 +46,7 @@
 
     <!-- כפתורי תשובה -->
     <div id="view-answer" class="hidden">
+      <div id="ansMedia" class="mb-3 hidden rounded-2xl overflow-hidden shadow-xl bg-black/20"></div>
       <div class="glass rounded-2xl p-4 mb-4 text-center">
         <div id="ansQNum" class="text-xs font-bold text-slate-500 mb-1"></div>
         <div id="ansQText" class="text-lg font-black text-slate-800 leading-snug"></div>
@@ -164,14 +165,39 @@
       show('done');
     });
 
+    // מציג מדיה (תמונה/סרטון/אודיו) גם למשתתפת בדפדפן. בונה מחדש רק כשמשתנה השאלה,
+    // כדי לא לאתחל סרטון/אודיו בכל עדכון מצב.
+    let mediaKey = '';
+    function renderMedia(media, qNum){
+      const box = document.getElementById('ansMedia');
+      const key = media ? (qNum + '|' + media.type + '|' + media.url) : '';
+      if(key === mediaKey) return; // אין שינוי — לא נוגעים בנגן
+      mediaKey = key;
+      if(!media || !media.url){ box.innerHTML=''; box.classList.add('hidden'); return; }
+      const url = media.url;
+      let html = '';
+      if(media.type === 'image'){
+        html = `<img src="${url}" class="w-full max-h-56 object-contain bg-black" alt="" />`;
+      } else if(media.type === 'video'){
+        html = `<video src="${url}" class="w-full max-h-56 bg-black" playsinline autoplay muted loop controls></video>`;
+      } else if(media.type === 'audio'){
+        html = `<div class="p-3"><audio src="${url}" class="w-full" controls autoplay></audio></div>`;
+      }
+      box.innerHTML = html;
+      box.classList.toggle('hidden', !html);
+    }
+
     function renderView(view){
       if(!view) return;
       const phase = view.phase;
+      // עוצרים מדיה (בעיקר אודיו/סרטון) בכל מצב שאינו שאלה פעילה שטרם נענתה
+      if(phase !== 'question' || view.hasAnswered) renderMedia(null, 0);
       if(phase === 'lobby'){ show('waiting'); return; }
       if(phase === 'question'){
         if(view.hasAnswered){ show('submitted'); return; }
         document.getElementById('ansQNum').innerText = view.questionNumber ? `שאלה ${view.questionNumber} מתוך ${view.totalQuestions}` : '';
         document.getElementById('ansQText').innerText = view.questionText || '';
+        renderMedia(view.media, view.questionNumber);
         const opts = view.options || [];
         const n = view.numOptions || opts.length || 4;
         (opts).forEach((opt,i)=>{ const el=document.getElementById('ansOpt'+i); if(el) el.innerText = opt; });

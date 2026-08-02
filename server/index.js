@@ -145,6 +145,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ייצוא תשובות המשחק לאקסל — המנחה מבקש בסוף המשחק, מקבל את כל הנתונים בחזרה.
+  socket.on('host:export', (_data, ack) => {
+    const session = gameManager.getSession(socket.data.pin);
+    if (!session || session.hostId !== socket.id) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'אין הרשאה' });
+      return;
+    }
+    const data = typeof session.game.exportData === 'function' ? session.game.exportData() : null;
+    if (typeof ack === 'function') ack({ ok: !!data, data });
+  });
+
   // --- צד שחקן (דפדפן) ---
   // player:join — הצטרפות חדשה או חיבור-מחדש (השחקן שומר playerId בדפדפן ושורד רענון).
   socket.on('player:join', ({ pin, name, playerId } = {}, ack) => {

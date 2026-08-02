@@ -39,6 +39,7 @@ class TriviaGame {
     this.answers = new Map(); // playerId -> { value, timeLeft }
     this.distribution = [0, 0, 0, 0];
     this.scored = false;
+    this.answerHistory = {}; // idx שאלה -> תיעוד מלא (טקסט, תשובה נכונה, ומה כל שחקן ענה) — לייצוא אקסל
   }
 
   // --- מחזור חיים ---
@@ -85,19 +86,70 @@ class TriviaGame {
     const q = this.questions[this.currentIdx];
     if (!q) return;
     this.distribution = [0, 0, 0, 0];
+    // תיעוד השאלה לייצוא: הטקסט, התשובה הנכונה, ומה כל שחקן ענה + כמה נקודות קיבל
+    const record = {
+      qNum: this.currentIdx + 1,
+      text: q.text,
+      correctText: q.options[q.correct] != null ? q.options[q.correct] : '',
+      perPlayer: {},
+    };
     for (const [playerId, ans] of this.answers) {
       const player = this.session.getPlayer(playerId);
       if (!player) continue;
       if (ans.value >= 0 && ans.value < 4) this.distribution[ans.value]++;
+      let earned = 0;
       if (ans.value === q.correct) {
         // ניקוד לפי הניקוד שנקבע לשאלה (ברירת מחדל 1000): חצי בסיס + חצי בונוס מהירות
         const maxPts = Number.isFinite(q.points) ? q.points : 1000;
         const tl = q.timeLimit || 20;
         const speedFrac = Math.max(0, Math.min(1, (ans.timeLeft || 0) / tl));
-        player.score += Math.round(maxPts * (0.5 + 0.5 * speedFrac));
+        earned = Math.round(maxPts * (0.5 + 0.5 * speedFrac));
+        player.score += earned;
       }
+      record.perPlayer[playerId] = {
+        answerText: q.options[ans.value] != null ? q.options[ans.value] : '',
+        correct: ans.value === q.correct,
+        points: earned,
+      };
     }
+    this.answerHistory[this.currentIdx] = record;
     this.scored = true;
+  }
+
+  /**
+   * נתוני ייצוא לאקסל בסוף המשחק: לכל שחקן — שם, טלפון, ניקוד כולל, דירוג,
+   * והתשובה שנתן לכל שאלה (כולל אם צדק וכמה נקודות קיבל).
+   */
+  exportData() {
+    const played = [];
+    for (let i = 0; i <= this.currentIdx; i++) {
+      if (this.answerHistory[i]) played.push(this.answerHistory[i]);
+    }
+    const board = this.leaderboard(); // ממוין לפי ניקוד — נותן דירוג
+    const rankOf = {};
+    board.forEach((p, i) => { rankOf[p.id] = i + 1; });
+    const players = this.session.playerList()
+      .slice()
+      .sort((a, b) => (b.score || 0) - (a.score || 0))
+      .map((p) => ({
+        name: p.name,
+        phone: (p.meta && p.meta.phone) ? p.meta.phone : '',
+        kind: p.kind,
+        score: p.score || 0,
+        rank: rankOf[p.id] || '',
+        answers: played.map((r) => {
+          const a = r.perPlayer[p.id];
+          return a
+            ? { answerText: a.answerText, correct: a.correct, points: a.points }
+            : { answerText: '', correct: null, points: 0 };
+        }),
+      }));
+    return {
+      quizName: this.quizName || '',
+      playedAt: new Date().toISOString(),
+      questions: played.map((r) => ({ qNum: r.qNum, text: r.text, correctText: r.correctText })),
+      players,
+    };
   }
 
   reveal() {
@@ -146,6 +198,7 @@ class TriviaGame {
       this.phase = 'lobby';
       this.currentIdx = -1;
       this.answers.clear();
+      this.answerHistory = {};
       for (const p of this.session.playerList()) p.score = 0;
       this.session.emit('update');
     }
@@ -210,6 +263,8 @@ class TriviaGame {
         view.options = q.options;
         view.questionNumber = this.currentIdx + 1;
         view.totalQuestions = this.questions.length;
+        // מדיה (תמונה/סרטון/אודיו) — מוצגת גם למשתתפות בדפדפן, לא רק במסך המנחה
+        if (q.media) view.media = q.media;
       }
     } else if (this.phase === 'reveal') {
       view.correct = q.correct;
