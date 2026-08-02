@@ -1,4 +1,5 @@
 import { YemotRouter } from 'yemot-router2';
+import * as quizStore from '../quizStore.js';
 
 /**
  * מתאם "ימות המשיח" — מסלול טלפוניה אמיתי לפלאפונים כשרים.
@@ -66,11 +67,14 @@ export function createYemotRouter(gameManager) {
     // 2. הצטרפות כשחקן טלפון — אם המספר כבר שיחק (ונפל), חוזרים לאותו שחקן ושומרים ניקוד
     const digits = String(call.phone || '').replace(/\D/g, '');
     const last4 = digits.slice(-4) || '';
-    const name = last4 ? 'פלאפון ' + last4 : 'מתקשר';
+    // שם אמיתי מרשימת המורה לפי מספר הטלפון; אם אין — "פלאפון XXXX"
+    const rosterName = quizStore.lookupName(call.phone);
+    const name = rosterName || (last4 ? 'פלאפון ' + last4 : 'מתקשר');
     let player = digits
       ? session.playerList().find((p) => p.kind === 'phone' && p.meta && p.meta.phone === digits)
       : null;
     if (player) {
+      if (rosterName) player.name = rosterName; // עדכון לשם האמיתי אם נוסף לרשימה בינתיים
       session.setConnected(player.id, true); // חזר למשחק — הניקוד נשמר, והמסך מתעדכן
     } else {
       player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits } });

@@ -26,8 +26,33 @@
           <p class="text-xs text-yellow-100 font-semibold">הכניסי ושני שאלות ותשובות בקלות — נשמר לתמיד</p>
         </div>
       </div>
-      <a href="/" class="bg-white/90 hover:bg-white text-slate-700 font-bold px-4 py-2 rounded-xl shadow text-sm">← חזרה למסך המנחה</a>
+      <div class="flex items-center gap-2">
+        <button id="btnRoster" class="bg-white/90 hover:bg-white text-purple-700 font-bold px-4 py-2 rounded-xl shadow text-sm">📇 שמות לטלפון</button>
+        <a href="/" class="bg-white/90 hover:bg-white text-slate-700 font-bold px-4 py-2 rounded-xl shadow text-sm">← חזרה למסך המנחה</a>
+      </div>
     </header>
+
+    <!-- חלון רשימת שמות לטלפון (roster) -->
+    <div id="rosterModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-auto">
+      <div class="card rounded-3xl p-6 max-w-lg w-full my-8">
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="text-2xl font-black">📇 רשימת שמות לטלפון</h2>
+          <button id="rosterClose" class="text-slate-400 hover:text-slate-700 text-3xl leading-none">✕</button>
+        </div>
+        <p class="text-sm text-slate-600 mb-3">לכל תלמידה: מספר הטלפון שלה והשם. כשהיא תחייג מהמספר הזה — יופיע <b>שמה האמיתי</b> במסך המנחה ובקובץ האקסל, במקום "פלאפון XXXX".<br/>שורה לכל תלמידה, בפורמט: <b>מספר , שם</b></p>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button id="rosterImport" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold px-3 py-1.5 rounded-lg text-xs">📥 ייבוא מאקסל</button>
+          <input id="rosterFile" type="file" accept=".xlsx,.xls,.csv" class="hidden" />
+          <button id="rosterTemplate" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs">📄 הורדת תבנית</button>
+          <button id="rosterExportBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs">📊 ייצוא לאקסל</button>
+        </div>
+        <textarea id="rosterText" rows="12" dir="rtl" class="w-full border-2 border-slate-200 rounded-xl p-3 text-sm focus:border-purple-400" placeholder="0501234567, שרה כהן&#10;0521112222, רבקה לוי"></textarea>
+        <div class="flex justify-between items-center mt-2">
+          <span id="rosterCount" class="text-xs text-slate-500"></span>
+          <button id="rosterSave" class="bg-sky-600 hover:bg-sky-700 text-white font-black px-6 py-2.5 rounded-xl shadow">💾 שמור רשימה</button>
+        </div>
+      </div>
+    </div>
 
     <div class="grid md:grid-cols-[260px_1fr] gap-4">
       <!-- רשימת מאגרים -->
@@ -362,6 +387,85 @@
 
     function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function escapeAttr(s){ return escapeHtml(s); }
+
+    // --- רשימת שמות לטלפון (roster) ---
+    const rosterCount = ()=>{ $('rosterCount').innerText = parseRoster().length + ' תלמידות ברשימה'; };
+    function parseRoster(){
+      return $('rosterText').value.split('\n').map(line=>{
+        const t = line.trim(); if(!t) return null;
+        let phone, name;
+        const parts = t.split(/[\t,;]+/); // עדיפות למפריד פסיק / טאב / נקודה-פסיק
+        if(parts.length >= 2 && parts[1].trim()){
+          phone = parts[0].trim(); name = parts.slice(1).join(' ').trim();
+        } else { // אין פסיק — מפרידים ברווח: אסימון ראשון = מספר, השאר = שם
+          const w = t.split(/\s+/);
+          phone = w[0]; name = w.slice(1).join(' ').trim();
+        }
+        if(!phone || !name) return null;
+        return { phone, name };
+      }).filter(Boolean);
+    }
+    async function openRoster(){
+      try {
+        const list = await api('/api/roster');
+        $('rosterText').value = list.map(e=> e.phone + ', ' + e.name).join('\n');
+      } catch(e){ $('rosterText').value=''; }
+      rosterCount();
+      $('rosterModal').classList.remove('hidden');
+    }
+    $('btnRoster').onclick = openRoster;
+    $('rosterClose').onclick = ()=> $('rosterModal').classList.add('hidden');
+    $('rosterModal').onclick = (e)=>{ if(e.target === $('rosterModal')) $('rosterModal').classList.add('hidden'); };
+    $('rosterText').oninput = rosterCount;
+
+    $('rosterSave').onclick = async ()=>{
+      const entries = parseRoster();
+      try {
+        const saved = await api('/api/roster', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ entries }) });
+        $('rosterText').value = saved.map(e=> e.phone + ', ' + e.name).join('\n');
+        rosterCount();
+        toast('הרשימה נשמרה ✓ (' + saved.length + ' תלמידות)');
+      } catch(e){ toast('שגיאה בשמירה: '+e.message); }
+    };
+
+    $('rosterImport').onclick = ()=> $('rosterFile').click();
+    $('rosterFile').onchange = async (e)=>{
+      const file = e.target.files[0]; if(!file) return;
+      try {
+        const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, blankrows:false });
+        let start = 0;
+        const first = rows[0] || [];
+        if(first.length && /טלפון|שם|phone|name/i.test(String(first[0])+String(first[1]||''))) start = 1;
+        const lines = [];
+        for(let r=start; r<rows.length; r++){
+          const row = rows[r]; if(!row) continue;
+          const phone = String(row[0]==null?'':row[0]).trim();
+          const name = String(row[1]==null?'':row[1]).trim();
+          if(phone && name) lines.push(phone + ', ' + name);
+        }
+        $('rosterText').value = lines.join('\n');
+        rosterCount();
+        toast(lines.length ? `נטענו ${lines.length} תלמידות (לחצי "שמור רשימה")` : 'לא נמצאו שורות תקינות');
+      } catch(err){ toast('שגיאה בקריאת הקובץ: '+err.message); }
+      e.target.value='';
+    };
+
+    $('rosterTemplate').onclick = ()=>{
+      const rows = [['טלפון','שם'],['0501234567','שרה כהן'],['0521112222','רבקה לוי']];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'שמות');
+      XLSX.writeFile(wb, 'תבנית-שמות-לטלפון.xlsx');
+    };
+
+    $('rosterExportBtn').onclick = ()=>{
+      const rows = [['טלפון','שם'], ...parseRoster().map(e=>[e.phone, e.name])];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'שמות');
+      XLSX.writeFile(wb, 'רשימת-שמות-לטלפון.xlsx');
+    };
 
     loadQuizzes();
   </script>

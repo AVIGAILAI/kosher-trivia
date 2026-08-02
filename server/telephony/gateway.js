@@ -1,3 +1,5 @@
+import * as quizStore from '../quizStore.js';
+
 /**
  * שער טלפוני גנרי (IVR) — בלתי-תלוי בספק.
  *
@@ -71,8 +73,10 @@ export class TelephonyGateway {
       this.provider.gather(call.callId, { hint: 'הקישו את קוד המשחק (4 ספרות)' });
       return;
     }
-    const name = call.phone ? 'פלאפון ' + String(call.phone).slice(-4) : 'מתקשר';
-    const player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId } });
+    const digits = String(call.phone || '').replace(/\D/g, '');
+    const rosterName = quizStore.lookupName(call.phone);
+    const name = rosterName || (call.phone ? 'פלאפון ' + digits.slice(-4) : 'מתקשר');
+    const player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits } });
     call.session = session;
     call.playerId = player.id;
     call.state = 'game';

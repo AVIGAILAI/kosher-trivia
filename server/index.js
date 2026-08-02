@@ -60,6 +60,10 @@ app.delete('/api/quizzes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// --- רשימת שמות לפי טלפון (roster) — למחייגות בטלפון כשר ---
+app.get('/api/roster', (_req, res) => res.json(quizStore.listRoster()));
+app.put('/api/roster', (req, res) => res.json(quizStore.setRoster(req.body?.entries)));
+
 /**
  * חיווט אירועי Session אל שקעי Socket.IO.
  * נקרא פעם אחת כשה-session נוצר, כדי לא לרשום מאזינים כפולים.

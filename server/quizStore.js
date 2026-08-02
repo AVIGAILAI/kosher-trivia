@@ -23,10 +23,20 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const REDIS_KEY = 'kosher-trivia:quizzes';
 const redisEnabled = () => !!(REDIS_URL && REDIS_TOKEN);
 
-let db = { quizzes: [] };
+let db = { quizzes: [], roster: {} };
 
 function newId() {
   return 'q-' + randomUUID().slice(0, 8);
+}
+
+/**
+ * נרמול מספר טלפון לצורה אחידה: ספרות בלבד, המרת קידומת בינ"ל 972 ל-0.
+ * מאפשר התאמה בין מה שהמורה הזינה (עם/בלי מקפים) למה שימות מדווחת.
+ */
+export function normalizePhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('972')) d = '0' + d.slice(3);
+  return d;
 }
 
 /** ניקוי ואימות שאלה בודדת — מבטיח מבנה תקין לפני שמירה. */
@@ -170,4 +180,45 @@ export function deleteQuiz(id) {
   db.quizzes.splice(idx, 1);
   save();
   return true;
+}
+
+// --- רשימת שמות לפי מספר טלפון (roster) — למחייגות בטלפון כשר ---
+
+/** מחזיר את רשימת השמות כמערך [{ phone, name }] לתצוגה/עריכה. */
+export function listRoster() {
+  const roster = db.roster || {};
+  return Object.keys(roster).map((phone) => ({ phone, name: roster[phone] }));
+}
+
+/** מחליף את כל הרשימה. מקבל מערך [{ phone, name }]; מנרמל ושומר. */
+export function setRoster(entries) {
+  const roster = {};
+  if (Array.isArray(entries)) {
+    for (const e of entries.slice(0, 2000)) {
+      const phone = normalizePhone(e && e.phone);
+      const name = String((e && e.name) || '').trim().slice(0, 40);
+      if (phone && name) roster[phone] = name;
+    }
+  }
+  db.roster = roster;
+  save();
+  return listRoster();
+}
+
+/**
+ * חיפוש שם לפי מספר טלפון. מנרמל את שני הצדדים; אם אין התאמה מדויקת,
+ * מנסה התאמה לפי 9 הספרות האחרונות (סלחני לקידומות/אפסים מובילים).
+ */
+export function lookupName(rawPhone) {
+  const roster = db.roster || {};
+  const norm = normalizePhone(rawPhone);
+  if (!norm) return null;
+  if (roster[norm]) return roster[norm];
+  const suffix = norm.slice(-9);
+  if (suffix.length === 9) {
+    for (const key of Object.keys(roster)) {
+      if (key.slice(-9) === suffix) return roster[key];
+    }
+  }
+  return null;
 }
