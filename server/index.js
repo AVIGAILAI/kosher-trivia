@@ -94,7 +94,23 @@ io.on('connection', (socket) => {
     session.hostId = socket.id;
     socket.data.role = 'host';
     socket.data.pin = session.pin;
+    socket.data.hostToken = session.hostToken; // טוקן יציב לאימות פעולות אחרי חיבור-מחדש
     socket.join(`host-${session.pin}`);
+  };
+
+  /**
+   * מאתר את המשחק שהמנחה הזה מורשה לשלוט בו. מאמת לפי **הטוקן היציב** (ששורד
+   * ניתוק/רענון), לא רק לפי socket.id שמשתנה בכל חיבור-מחדש — כדי שלחיצות המנחה
+   * (כמו "שאלה הבאה", שמפעילה את חישוב הניקוד) לא ייפלו בשקט אחרי נפילת רשת קצרה.
+   */
+  const authorizedSession = () => {
+    const session = gameManager.getSession(socket.data.pin);
+    if (!session) return null;
+    const okById = session.hostId === socket.id;
+    const okByToken = session.hostToken && socket.data.hostToken && session.hostToken === socket.data.hostToken;
+    if (!okById && !okByToken) return null;
+    if (!okById) { session.hostId = socket.id; socket.join(`host-${session.pin}`); } // סנכרון מחדש
+    return session;
   };
   socket.on('host:hello', ({ hostToken, pin, gameType = 'trivia', quizId } = {}, ack) => {
     // ניסיון חיבור-מחדש למשחק קיים
@@ -124,8 +140,8 @@ io.on('connection', (socket) => {
 
   // החלפת מאגר השאלות של המשחק (מותר רק בלובי, לפני שהתחיל).
   socket.on('host:setQuiz', ({ quizId } = {}) => {
-    const session = gameManager.getSession(socket.data.pin);
-    if (!session || session.hostId !== socket.id) return;
+    const session = authorizedSession();
+    if (!session) return;
     const quiz = quizStore.getQuiz(quizId);
     if (quiz && typeof session.game.loadQuestions === 'function') {
       session.game.loadQuestions(quiz.questions, quiz.name);
@@ -134,13 +150,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('host:start', () => {
-    const session = gameManager.getSession(socket.data.pin);
-    if (session && session.hostId === socket.id) session.start();
+    const session = authorizedSession();
+    if (session) session.start();
   });
 
   socket.on('host:action', ({ action } = {}) => {
-    const session = gameManager.getSession(socket.data.pin);
-    if (!session || session.hostId !== socket.id) return;
+    const session = authorizedSession();
+    if (!session) return;
     session.hostAction(action);
     // "עצור" / "משחק חדש" → מוציאים את כל המשתתפים (מסך + טלפון) כדי שיבינו שהסתיים
     if (action === 'stop' || action === 'restart') {
@@ -151,8 +167,8 @@ io.on('connection', (socket) => {
 
   // ייצוא תשובות המשחק לאקסל — המנחה מבקש בסוף המשחק, מקבל את כל הנתונים בחזרה.
   socket.on('host:export', (_data, ack) => {
-    const session = gameManager.getSession(socket.data.pin);
-    if (!session || session.hostId !== socket.id) {
+    const session = authorizedSession();
+    if (!session) {
       if (typeof ack === 'function') ack({ ok: false, error: 'אין הרשאה' });
       return;
     }
