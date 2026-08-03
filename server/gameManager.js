@@ -33,6 +33,9 @@ export class Session extends EventEmitter {
     this.hostId = null;
     this.hostToken = config.hostToken || null; // מזהה יציב למנחה — מאפשר חיבור-מחדש לאותו משחק
     this.quizId = config.quizId || null;
+    this.classId = config.classId || null;   // שיוך לכיתה (לתחרות בין-כיתתית)
+    this.className = config.className || '';
+    this.persistent = !!config.persistent;    // חדר כיתה קבוע — לא נמחק בניקוי חוסר-פעילות
 
     const factory = gameFactories[gameType];
     if (!factory) throw new Error(`משחק לא מוכר: ${gameType}`);
@@ -113,6 +116,8 @@ export class Session extends EventEmitter {
     return {
       pin: this.pin,
       gameType: this.gameType,
+      classId: this.classId,
+      className: this.className,
       players: this.playerList().map((p) => ({
         id: p.id,
         name: p.name,
@@ -162,7 +167,8 @@ export class GameManager {
   }
 
   createSession(gameType = 'trivia', config = {}) {
-    const pin = this.generatePin();
+    // קוד קבוע (כיתה) אם סופק ופנוי; אחרת קוד אקראי
+    const pin = config.pin && !this.sessions.has(String(config.pin)) ? String(config.pin) : this.generatePin();
     const session = new Session(pin, gameType, config);
     this.sessions.set(pin, session);
     return session;

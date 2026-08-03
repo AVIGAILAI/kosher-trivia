@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>חדרי כיתות — טריוויה בנות לאה</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family:'Rubik',sans-serif; background:linear-gradient(135deg,#7e3f9d 0%,#5a2c7d 50%,#391c55 100%); min-height:100vh; }
+    .glass { background:rgba(255,255,255,.95); box-shadow:0 20px 40px rgba(0,0,0,.15); }
+  </style>
+</head>
+<body class="p-4 md:p-8 text-white">
+  <div class="max-w-5xl mx-auto">
+    <header class="flex items-center justify-between gap-3 mb-6">
+      <div class="flex items-center gap-4">
+        <img src="/media/logo-white.png" alt="בנות לאה" class="h-20 w-20 md:h-24 md:w-24 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
+        <div>
+          <h1 class="text-3xl font-black drop-shadow">חדרי הכיתות</h1>
+          <p class="text-sm text-purple-100 font-semibold">בחרי חדר לפתיחת מסך מנחה — או פתחי את לוח התחרות</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/classes" class="bg-amber-400 hover:bg-amber-300 text-purple-900 font-black px-4 py-2 rounded-xl text-sm shadow">🏆 לוח התחרות</a>
+        <a href="/editor" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">✏️ עורך</a>
+      </div>
+    </header>
+
+    <!-- הסבר טלפון -->
+    <div class="bg-white/15 rounded-2xl p-4 mb-6 text-sm font-semibold leading-relaxed">
+      📞 <b>לתלמידות בפלאפון כשר:</b> מחייגות למספר <span dir="ltr" class="font-black" id="phoneNum">—</span>, ומקישות את <b>קוד הכיתה שלהן</b> (הקוד הקבוע שמופיע כאן ובמסך המנחה). כל כיתה משחקת בחדר משלה — הנקודות נצברות לכיתה בלוח התחרות.
+    </div>
+
+    <div id="rooms" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>
+
+  <script>
+    const $ = (id)=>document.getElementById(id);
+    async function load(){
+      let classes = [];
+      try { classes = await (await fetch('/api/classes')).json(); } catch(e){}
+      const box = $('rooms'); box.innerHTML = '';
+      classes.forEach(c => {
+        const card = document.createElement('div');
+        card.className = 'glass rounded-2xl p-5 text-slate-800 flex flex-col gap-3';
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <div class="text-2xl font-black ${c.salon?'text-amber-600':'text-purple-800'}">${c.salon?'🏛️ ':'🏫 '}<span class="cname">${escapeHtml(c.name)}</span></div>
+            <button class="rename text-slate-400 hover:text-purple-700 text-sm font-bold" data-id="${c.id}">✏️ שם</button>
+          </div>
+          <div class="text-center bg-purple-50 rounded-xl py-3 border-2 border-purple-100">
+            <div class="text-xs font-bold text-slate-500">קוד לחיוג / הצטרפות</div>
+            <div class="text-4xl font-black text-purple-800 tracking-widest">${c.code}</div>
+          </div>
+          <a href="/?class=${c.id}" class="block text-center bg-purple-600 hover:bg-purple-700 text-white font-black py-3 rounded-xl shadow">▶ פתח מסך מנחה</a>
+          ${c.salon?'<div class="text-xs text-center text-slate-500 font-semibold">הסלון = כל התיכון יחד (לא נספר בתחרות הכיתתית)</div>':''}
+        `;
+        card.querySelector('.rename').onclick = ()=> renameClass(c.id, c.name);
+        box.appendChild(card);
+      });
+      // מספר הטלפון — נטען ממסך המנחה (host:hello מחזיר phone); כאן פשוט קבוע ידוע
+      $('phoneNum').innerText = '0733512469';
+    }
+    async function renameClass(id, current){
+      const name = prompt('שם חדש לכיתה:', current);
+      if(name===null) return;
+      const t = name.trim(); if(!t) return;
+      try {
+        await fetch('/api/classes/rename', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, name:t }) });
+        load();
+      } catch(e){ alert('שגיאה בשינוי השם'); }
+    }
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    load();
+  </script>
+</body>
+</html>

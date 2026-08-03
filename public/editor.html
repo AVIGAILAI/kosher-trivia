@@ -26,9 +26,11 @@
           <p class="text-xs text-yellow-100 font-semibold">הכניסי ושני שאלות ותשובות בקלות — נשמר לתמיד</p>
         </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap justify-end">
         <button id="btnRoster" class="bg-white/90 hover:bg-white text-purple-700 font-bold px-4 py-2 rounded-xl shadow text-sm">📇 שמות לטלפון</button>
-        <a href="/" class="bg-white/90 hover:bg-white text-slate-700 font-bold px-4 py-2 rounded-xl shadow text-sm">← חזרה למסך המנחה</a>
+        <button id="btnGames" class="bg-white/90 hover:bg-white text-purple-700 font-bold px-4 py-2 rounded-xl shadow text-sm">🗂️ משחקים קודמים</button>
+        <a href="/rooms" class="bg-white/90 hover:bg-white text-purple-700 font-bold px-4 py-2 rounded-xl shadow text-sm">🏫 חדרי כיתות</a>
+        <a href="/" class="bg-white/90 hover:bg-white text-slate-700 font-bold px-4 py-2 rounded-xl shadow text-sm">← מסך המנחה</a>
       </div>
     </header>
 
@@ -52,6 +54,18 @@
           <span id="rosterCount" class="text-xs text-slate-500"></span>
           <button id="rosterSave" class="bg-sky-600 hover:bg-sky-700 text-white font-black px-6 py-2.5 rounded-xl shadow">💾 שמור רשימה</button>
         </div>
+      </div>
+    </div>
+
+    <!-- חלון משחקים קודמים -->
+    <div id="gamesModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-start justify-center p-4 overflow-auto">
+      <div class="card rounded-3xl p-6 max-w-2xl w-full my-8">
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="text-2xl font-black">🗂️ משחקים קודמים</h2>
+          <button id="gamesClose" class="text-slate-400 hover:text-slate-700 text-3xl leading-none">✕</button>
+        </div>
+        <p class="text-sm text-slate-600 mb-3">כל משחק שהסתיים נשמר אוטומטית (גם אם לא הורדת אקסל). אפשר להוריד לאקסל בכל רגע.</p>
+        <div id="gamesList" class="space-y-2 max-h-[60vh] overflow-auto"></div>
       </div>
     </div>
 
@@ -478,6 +492,78 @@
       XLSX.utils.book_append_sheet(wb, ws, 'שמות');
       XLSX.writeFile(wb, 'רשימת-שמות-לטלפון.xlsx');
     };
+
+    // --- משחקים קודמים (היסטוריה + הורדה חוזרת לאקסל) ---
+    $('btnGames').onclick = openGames;
+    $('gamesClose').onclick = ()=> $('gamesModal').classList.add('hidden');
+    $('gamesModal').onclick = (e)=>{ if(e.target===$('gamesModal')) $('gamesModal').classList.add('hidden'); };
+    async function openGames(){
+      const box = $('gamesList'); box.innerHTML = '<div class="text-slate-400 text-sm p-2">טוען…</div>';
+      $('gamesModal').classList.remove('hidden');
+      let games = [];
+      try { games = await api('/api/games'); } catch(e){}
+      if(!games.length){ box.innerHTML = '<div class="text-slate-500 text-sm p-4 text-center">עדיין אין משחקים שמורים.</div>'; return; }
+      box.innerHTML = '';
+      games.forEach(g => {
+        const d = new Date(g.playedAt).toLocaleString('he-IL',{dateStyle:'short',timeStyle:'short'});
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 border-2 border-slate-100 rounded-xl p-3';
+        row.innerHTML = `
+          <div class="flex-1 min-w-0">
+            <div class="font-black truncate">${escapeHtml(g.className||'—')} <span class="text-slate-400 font-normal text-sm">· ${escapeHtml(g.quizName||'')}</span></div>
+            <div class="text-xs text-slate-500">${d} · ${g.players} משתתפות · ${g.classTotal} נק' לכיתה</div>
+          </div>
+          <button class="dl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold px-3 py-1.5 rounded-lg text-xs shrink-0">📊 אקסל</button>
+          <button class="del bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-3 py-1.5 rounded-lg text-xs shrink-0">🗑️</button>
+        `;
+        row.querySelector('.dl').onclick = ()=> downloadGame(g.id);
+        row.querySelector('.del').onclick = ()=> deleteGame(g.id);
+        box.appendChild(row);
+      });
+    }
+    async function downloadGame(id){
+      try {
+        const g = await api('/api/games/'+id);
+        if(!g || !g.data){ toast('אין נתונים למשחק זה'); return; }
+        buildGameWorkbook(g.data);
+      } catch(e){ toast('שגיאה בהורדה'); }
+    }
+    async function deleteGame(id){
+      if(!confirm('למחוק את המשחק מההיסטוריה?')) return;
+      try { await fetch('/api/games/'+id,{method:'DELETE'}); openGames(); } catch(e){ toast('שגיאה במחיקה'); }
+    }
+
+    // בונה קובץ אקסל ממשחק שמור (אותו פורמט 3-גיליונות של מסך הסיום)
+    function buildGameWorkbook(data){
+      const qs = data.questions || [];
+      const dt = data.playedAt ? new Date(data.playedAt) : new Date();
+      const dateStr = dt.toLocaleString('he-IL', { dateStyle:'short', timeStyle:'short' });
+      const summary = [['משחק:', data.quizName||''],['תאריך המשחק:', dateStr],[],['דירוג','שם','טלפון','אופן','ניקוד המשחק','תשובות נכונות']];
+      (data.players||[]).forEach(p => {
+        const correct = (p.answers||[]).filter(a => a.correct === true).length;
+        summary.push([ p.rank, p.name, p.phone||'', p.kind==='phone'?'טלפון':'דפדפן', p.score, correct+'/'+qs.length ]);
+      });
+      const header = ['שם','טלפון','ניקוד כולל'];
+      qs.forEach((q,i)=> header.push('ש'+(q.qNum||i+1)+': '+q.text));
+      const detail = [header];
+      (data.players||[]).forEach(p => {
+        const rowd = [ p.name, p.phone||'', p.score ];
+        (p.answers||[]).forEach(a => rowd.push(a.answerText===''&&a.correct===null ? '—' : (a.correct?'✓ ':'✗ ')+a.answerText+' ('+a.points+')'));
+        detail.push(rowd);
+      });
+      const key = [['#','שאלה','תשובה נכונה']];
+      qs.forEach((q,i)=> key.push([ q.qNum||i+1, q.text, q.correctText ]));
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.aoa_to_sheet(summary); ws1['!cols']=[{wch:7},{wch:20},{wch:14},{wch:9},{wch:12},{wch:14}];
+      XLSX.utils.book_append_sheet(wb, ws1, 'סיכום');
+      const ws2 = XLSX.utils.aoa_to_sheet(detail); ws2['!cols']=[{wch:20},{wch:14},{wch:12}].concat(qs.map(()=>({wch:28})));
+      XLSX.utils.book_append_sheet(wb, ws2, 'פירוט תשובות');
+      const ws3 = XLSX.utils.aoa_to_sheet(key); ws3['!cols']=[{wch:5},{wch:50},{wch:24}];
+      XLSX.utils.book_append_sheet(wb, ws3, 'מפתח שאלות');
+      const stamp = dt.toISOString().slice(0,16).replace('T','_').replace(/:/g,'-');
+      const safe = (data.quizName||'טריוויה').replace(/[\\/:*?"<>|]/g,'');
+      XLSX.writeFile(wb, 'תוצאות_'+safe+'_'+stamp+'.xlsx');
+    }
 
     loadQuizzes();
   </script>

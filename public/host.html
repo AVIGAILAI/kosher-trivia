@@ -32,9 +32,13 @@
         <div>
           <h1 class="text-3xl font-black drop-shadow">טריוויה — בנות לאה</h1>
           <p class="text-sm text-purple-100 font-semibold">מסך מנחה — להקרנה</p>
+          <p id="classBadge" class="hidden mt-1 inline-block bg-white/25 text-white font-black px-3 py-1 rounded-full text-lg"></p>
         </div>
       </div>
-      <button id="btnSound" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🔊 צליל</button>
+      <div class="flex items-center gap-2">
+        <a href="/rooms" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🏫 חדרים</a>
+        <button id="btnSound" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🔊 צליל</button>
+      </div>
     </header>
 
     <!-- פס עליון קבוע בזמן משחק: קוד + טלפון (למצטרפים באמצע) -->
@@ -241,18 +245,27 @@
     let lastPhase = null;
 
     // מזהה יציב למנחה — נשמר בדפדפן, כדי לחזור לאותו משחק אחרי רענון/נפילת רשת
+    // חדר כיתה (מתוך ?class=) — כל כיתה עם מפתחות localStorage משלה, כדי שכל חדר יתחבר-מחדש עצמאית
+    const CLASS_ID = new URLSearchParams(location.search).get('class') || null;
+    const TOKEN_KEY = CLASS_ID ? 'triviaHostToken:' + CLASS_ID : 'triviaHostToken';
+    const PIN_KEY = CLASS_ID ? 'triviaHostPin:' + CLASS_ID : 'triviaHostPin';
     const HOST_TOKEN = (() => {
-      let t = localStorage.getItem('triviaHostToken');
-      if(!t){ t = 'h-' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('triviaHostToken', t); }
+      let t = localStorage.getItem(TOKEN_KEY);
+      if(!t){ t = 'h-' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(TOKEN_KEY, t); }
       return t;
     })();
 
     socket.on('connect', () => {
-      const savedPin = localStorage.getItem('triviaHostPin') || null;
-      socket.emit('host:hello', { gameType:'trivia', hostToken: HOST_TOKEN, pin: savedPin }, (res) => {
+      const savedPin = localStorage.getItem(PIN_KEY) || null;
+      socket.emit('host:hello', { gameType:'trivia', hostToken: HOST_TOKEN, pin: savedPin, classId: CLASS_ID }, (res) => {
         if(!res || !res.ok) return;
         pin = res.pin;
-        localStorage.setItem('triviaHostPin', pin);
+        localStorage.setItem(PIN_KEY, pin);
+        if(res.className){
+          const b = document.getElementById('classBadge');
+          b.innerText = '🏫 ' + res.className; b.classList.remove('hidden');
+          document.title = res.className + ' — טריוויה בנות לאה';
+        }
         document.getElementById('pin').innerText = pin;
         document.getElementById('topPin').innerText = pin;
         if(res.phone){ document.getElementById('phoneNumber').innerText = res.phone; document.getElementById('topPhone').innerText = res.phone; }

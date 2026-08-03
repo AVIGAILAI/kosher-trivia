@@ -23,10 +23,45 @@ const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const REDIS_KEY = 'kosher-trivia:quizzes';
 const redisEnabled = () => !!(REDIS_URL && REDIS_TOKEN);
 
-let db = { quizzes: [], roster: {} };
+let db = { quizzes: [], roster: {}, classes: [], gameHistory: [], classResetAt: 0 };
 
 function newId() {
   return 'q-' + randomUUID().slice(0, 8);
+}
+
+// --- כיתות: קוד קבוע וייחודי לכל כיתה (הקוד שהתלמידות מקישות בטלפון) ---
+function genClassCode(used) {
+  let code;
+  do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (used.has(code));
+  used.add(code);
+  return code;
+}
+
+/** רשימת ברירת מחדל: סלון (כל בית הספר) + 5 כיתות, כל אחת עם קוד קבוע. */
+function defaultClasses() {
+  const used = new Set();
+  const mk = (id, name, salon) => ({ id, name, code: genClassCode(used), salon: !!salon });
+  return [
+    mk('salon', 'סלון', true),
+    mk('c1', 'כיתה 1'), mk('c2', 'כיתה 2'), mk('c3', 'כיתה 3'),
+    mk('c4', 'כיתה 4'), mk('c5', 'כיתה 5'),
+  ];
+}
+
+/** מוודא שכל השדות קיימים אחרי טעינה (Redis/קובץ ישן) + יוצר כיתות ברירת מחדל. מחזיר true אם שינה. */
+function ensureDbShape() {
+  let changed = false;
+  if (!Array.isArray(db.quizzes)) { db.quizzes = []; changed = true; }
+  if (!db.roster || typeof db.roster !== 'object') { db.roster = {}; changed = true; }
+  if (!Array.isArray(db.gameHistory)) { db.gameHistory = []; changed = true; }
+  if (typeof db.classResetAt !== 'number') { db.classResetAt = 0; changed = true; }
+  if (!Array.isArray(db.classes) || db.classes.length === 0) { db.classes = defaultClasses(); changed = true; }
+  // השלמת קוד קבוע לכל כיתה שאין לה (הקוד לא משתנה לעולם — התלמידות מקישות אותו)
+  const used = new Set(db.classes.map((c) => c.code).filter(Boolean));
+  for (const c of db.classes) {
+    if (!c.code) { c.code = genClassCode(used); changed = true; }
+  }
+  return changed;
 }
 
 /**
@@ -126,11 +161,14 @@ export async function init() {
       const remote = await redisGet();
       if (remote && Array.isArray(remote.quizzes) && remote.quizzes.length) {
         db = remote;
-        console.log(`📚 מאגרי שאלות נטענו מ-Redis (${db.quizzes.length} מאגרים) — אחסון קבוע ✓`);
+        const changed = ensureDbShape(); // השלמת כיתות/היסטוריה למאגר קיים
+        if (changed) await redisSet(db);
+        console.log(`📚 מאגרי שאלות נטענו מ-Redis (${db.quizzes.length} מאגרים, ${db.classes.length} כיתות) — אחסון קבוע ✓`);
         return;
       }
       // Redis ריק — זריעה ראשונית מהקובץ ושמירה ל-Redis
       db = loadFromFile();
+      ensureDbShape();
       await redisSet(db);
       console.log('📚 Redis היה ריק — נזרע מהקובץ ונשמר. אחסון קבוע ✓');
       return;
@@ -139,6 +177,7 @@ export async function init() {
     }
   }
   db = loadFromFile();
+  ensureDbShape();
   writeFileBackup();
   console.log('📚 מאגרי שאלות נטענו מקובץ מקומי (אחסון זמני — הגדירי Redis לאחסון קבוע)');
 }
@@ -248,4 +287,109 @@ export function lookupName(rawPhone) {
     }
   }
   return null;
+}
+
+// --- כיתות + היסטוריית משחקים (תחרות בין-כיתתית) ---
+
+/** רשימת הכיתות [{ id, name, code, salon }]. הקוד קבוע — התלמידות מקישות אותו בטלפון. */
+export function listClasses() {
+  return (db.classes || []).map((c) => ({ id: c.id, name: c.name, code: c.code, salon: !!c.salon }));
+}
+
+export function getClass(id) {
+  return (db.classes || []).find((c) => c.id === id) || null;
+}
+
+/** שינוי שם כיתה בלבד — הקוד לעולם לא משתנה (התלמידות זוכרות אותו). */
+export function renameClass(id, name) {
+  const c = getClass(id);
+  if (!c) return null;
+  const n = String(name || '').trim().slice(0, 40);
+  if (n) c.name = n;
+  save();
+  return listClasses();
+}
+
+/**
+ * מחליף את רשימת הכיתות (הוספה/מחיקה/שינוי שם). **משמר את הקוד** של כל כיתה קיימת
+ * לפי ה-id — כדי שקודי הטלפון לא ישתנו. כיתה חדשה מקבלת id + קוד ייחודי.
+ */
+export function setClasses(entries) {
+  if (!Array.isArray(entries)) return listClasses();
+  const prevById = new Map((db.classes || []).map((c) => [c.id, c]));
+  const used = new Set();
+  const out = [];
+  for (const e of entries.slice(0, 30)) {
+    const name = String((e && e.name) || '').trim().slice(0, 40);
+    if (!name) continue;
+    const existing = e && e.id ? prevById.get(e.id) : null;
+    const id = existing ? existing.id : (e && e.salon ? 'salon' : 'c-' + randomUUID().slice(0, 6));
+    let code = existing ? existing.code : null;
+    if (!code || used.has(code)) code = genClassCode(used); else used.add(code);
+    out.push({ id, name, code, salon: existing ? !!existing.salon : !!(e && e.salon) });
+  }
+  if (out.length === 0) return listClasses(); // לא מוחקים הכל בטעות
+  if (!out.some((c) => c.salon)) {
+    const s = getClass('salon');
+    out.unshift({ id: 'salon', name: s ? s.name : 'סלון', code: s ? s.code : genClassCode(used), salon: true });
+  }
+  db.classes = out;
+  save();
+  return listClasses();
+}
+
+/** שומר משחק שהסתיים בהיסטוריה (כולל data=exportData לייצוא חוזר). */
+export function saveGame(rec = {}) {
+  const record = {
+    id: 'g-' + randomUUID().slice(0, 8),
+    classId: rec.classId || null,
+    className: rec.className || '',
+    quizName: rec.quizName || '',
+    playedAt: Date.now(),
+    classTotal: Number(rec.classTotal) || 0,
+    data: rec.data || null,
+  };
+  db.gameHistory.push(record);
+  if (db.gameHistory.length > 200) db.gameHistory = db.gameHistory.slice(-200);
+  save();
+  return record;
+}
+
+/** רשימת משחקים קודמים (תקציר, בלי ה-data הכבד), מהחדש לישן. */
+export function listGames() {
+  return (db.gameHistory || []).slice().reverse().map((g) => ({
+    id: g.id, classId: g.classId, className: g.className, quizName: g.quizName,
+    playedAt: g.playedAt, classTotal: g.classTotal,
+    players: g.data && Array.isArray(g.data.players) ? g.data.players.length : 0,
+  }));
+}
+
+export function getGame(id) {
+  return (db.gameHistory || []).find((g) => g.id === id) || null;
+}
+
+export function deleteGame(id) {
+  const i = (db.gameHistory || []).findIndex((g) => g.id === id);
+  if (i === -1) return false;
+  db.gameHistory.splice(i, 1);
+  save();
+  return true;
+}
+
+/** איפוס הצבירה הכיתתית — מסמן חותמת זמן; הצבירה נספרת רק ממשחקים שאחריה. */
+export function resetClassScores() {
+  db.classResetAt = Date.now();
+  save();
+  return db.classResetAt;
+}
+
+/** נקודות נצברות לכל כיתה = Σ classTotal בהיסטוריה מאז האיפוס (ללא סלון). */
+export function accumulatedByClass() {
+  const since = db.classResetAt || 0;
+  const acc = {};
+  for (const g of db.gameHistory || []) {
+    if (!g.classId || g.playedAt < since) continue;
+    acc[g.classId] = (acc[g.classId] || 0) + (Number(g.classTotal) || 0);
+  }
+  return acc;
 }

@@ -33,6 +33,8 @@ app.get('/', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'host.html')));
 app.get('/controller', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'controller.html')));
 app.get('/kosher-sim', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'kosher-sim.html')));
 app.get('/editor', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'editor.html')));
+app.get('/rooms', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'rooms.html')));
+app.get('/classes', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'classes.html')));
 
 // --- מסלול טלפוניה אמיתי (Twilio Voice webhooks) ---
 app.use('/voice', createTwilioRouter(gameManager));
@@ -64,6 +66,36 @@ app.delete('/api/quizzes/:id', (req, res) => {
 app.get('/api/roster', (_req, res) => res.json(quizStore.listRoster()));
 app.put('/api/roster', (req, res) => res.json(quizStore.setRoster(req.body?.entries)));
 
+// --- כיתות + תחרות בין-כיתתית + היסטוריית משחקים ---
+app.get('/api/classes', (_req, res) => res.json(quizStore.listClasses()));
+app.put('/api/classes', (req, res) => {
+  const list = quizStore.setClasses(req.body?.classes);
+  for (const c of list) ensureClassSession(c); // חדרים חיים לכל הכיתות (כולל חדשות)
+  broadcastClassBoard();
+  res.json(list);
+});
+app.post('/api/classes/rename', (req, res) => {
+  const list = quizStore.renameClass(req.body?.id, req.body?.name);
+  const cls = quizStore.getClass(req.body?.id);
+  if (cls) { const s = gameManager.getSession(cls.code); if (s) s.className = cls.name; } // עדכון החדר החי
+  broadcastClassBoard();
+  res.json(list || quizStore.listClasses());
+});
+app.post('/api/classes/reset', (_req, res) => {
+  quizStore.resetClassScores();
+  broadcastClassBoard();
+  res.json({ ok: true });
+});
+app.get('/api/classes/standings', (_req, res) => res.json(computeClassStandings()));
+
+app.get('/api/games', (_req, res) => res.json(quizStore.listGames()));
+app.get('/api/games/:id', (req, res) => {
+  const g = quizStore.getGame(req.params.id);
+  if (!g) return res.status(404).json({ error: 'משחק לא נמצא' });
+  res.json(g);
+});
+app.delete('/api/games/:id', (req, res) => res.json({ ok: quizStore.deleteGame(req.params.id) }));
+
 /**
  * חיווט אירועי Session אל שקעי Socket.IO.
  * נקרא פעם אחת כשה-session נוצר, כדי לא לרשום מאזינים כפולים.
@@ -77,13 +109,73 @@ function wireSession(session) {
     for (const p of session.playerList()) {
       io.to(`pv-${p.id}`).emit('player:state', session.playerView(p.id));
     }
+    if (session.classId) broadcastClassBoard(); // עדכון לוח התחרות חי כשהניקוד משתנה
   };
 
   session.on('update', pushState);
-  // אירועי מחזור חיים — מועברים גם לשער הטלפוני בשלב 2. כרגע רק לוג.
   session.on('question', (d) => io.to(`host-${pin}`).emit('host:event', { type: 'question', ...d }));
   session.on('reveal', (d) => io.to(`host-${pin}`).emit('host:event', { type: 'reveal', ...d }));
-  session.on('gameover', (d) => io.to(`host-${pin}`).emit('host:event', { type: 'gameover', ...d }));
+  session.on('gameover', (d) => {
+    io.to(`host-${pin}`).emit('host:event', { type: 'gameover', ...d });
+    saveFinishedGame(session); // שמירת המשחק להיסטוריה + צבירה כיתתית (פעם אחת)
+  });
+}
+
+/** יוצר/מחזיר את החדר הקבוע של כיתה (קוד יציב, לא נמחק בניקוי). */
+function ensureClassSession(cls) {
+  let session = gameManager.getSession(cls.code);
+  if (session) { session.className = cls.name; return session; }
+  const quiz = quizStore.firstQuiz();
+  session = gameManager.createSession('trivia', {
+    pin: cls.code, classId: cls.id, className: cls.name, persistent: true,
+    questions: quiz ? quiz.questions : [], quizId: quiz ? quiz.id : null, quizName: quiz ? quiz.name : '',
+  });
+  wireSession(session);
+  return session;
+}
+
+/** שומר משחק שהסתיים פעם אחת (guard ב-session._saved שמתאפס במשחק חדש). */
+function saveFinishedGame(session) {
+  try {
+    if (session._saved) return;
+    const players = session.playerList();
+    const classTotal = players.reduce((s, p) => s + (p.score || 0), 0);
+    const data = typeof session.game.exportData === 'function' ? session.game.exportData() : null;
+    quizStore.saveGame({
+      classId: session.classId,
+      className: session.className,
+      quizName: (data && data.quizName) || session.game.quizName || '',
+      classTotal, data,
+    });
+    session._saved = true;
+    broadcastClassBoard();
+  } catch (e) {
+    console.error('שמירת משחק נכשלה:', e.message);
+  }
+}
+
+/** דירוג הכיתות (ללא סלון): נצבר מההיסטוריה + חי מהמשחקים הפעילים (לא-final, למניעת ספירה כפולה). */
+function computeClassStandings() {
+  const classes = quizStore.listClasses().filter((c) => !c.salon);
+  const accumulated = quizStore.accumulatedByClass();
+  const live = {};
+  for (const s of gameManager.sessions.values()) {
+    if (!s.classId || (s.game && s.game.phase === 'final')) continue; // משחק שהסתיים כבר נצבר בהיסטוריה
+    let sum = 0;
+    for (const p of s.playerList()) sum += p.score || 0;
+    live[s.classId] = (live[s.classId] || 0) + sum;
+  }
+  return classes
+    .map((c) => {
+      const acc = accumulated[c.id] || 0;
+      const lv = live[c.id] || 0;
+      return { id: c.id, name: c.name, code: c.code, accumulated: acc, live: lv, total: acc + lv };
+    })
+    .sort((a, b) => b.total - a.total);
+}
+
+function broadcastClassBoard() {
+  io.to('classboard').emit('classes:state', { standings: computeClassStandings(), at: Date.now() });
 }
 
 io.on('connection', (socket) => {
@@ -112,7 +204,21 @@ io.on('connection', (socket) => {
     if (!okById) { session.hostId = socket.id; socket.join(`host-${session.pin}`); } // סנכרון מחדש
     return session;
   };
-  socket.on('host:hello', ({ hostToken, pin, gameType = 'trivia', quizId } = {}, ack) => {
+  socket.on('host:hello', ({ hostToken, pin, gameType = 'trivia', quizId, classId } = {}, ack) => {
+    // חדר כיתה — מתחברים ל-session הקבוע של הכיתה (לפי הקוד הקבוע), לא יוצרים אקראי
+    if (classId) {
+      const cls = quizStore.getClass(classId);
+      if (cls) {
+        const session = ensureClassSession(cls);
+        if (hostToken) session.hostToken = hostToken; // המנחה הנוכחי מאמץ שליטה
+        attachHost(session);
+        session.lastActive = Date.now();
+        if (typeof ack === 'function') {
+          ack({ ok: true, pin: session.pin, code: session.pin, resumed: true, classId: cls.id, className: cls.name, quizId: session.quizId, phone: YEMOT_PHONE, state: session.hostState() });
+        }
+        return;
+      }
+    }
     // ניסיון חיבור-מחדש למשחק קיים
     const existing = pin ? gameManager.getSession(pin) : null;
     if (existing && hostToken && existing.hostToken === hostToken) {
@@ -162,6 +268,7 @@ io.on('connection', (socket) => {
     if (action === 'stop' || action === 'restart') {
       for (const p of session.playerList()) io.to(`pv-${p.id}`).emit('game:ended');
       session.clearPlayers();
+      session._saved = false; // מאפשר שמירה מחדש של המשחק הבא
     }
   });
 
@@ -209,6 +316,12 @@ io.on('connection', (socket) => {
     }
   });
 
+  // --- לוח תחרות כיתתי (מסך גדול) ---
+  socket.on('classboard:hello', (_data, ack) => {
+    socket.join('classboard');
+    if (typeof ack === 'function') ack({ ok: true, standings: computeClassStandings() });
+  });
+
   // --- צד סימולטור פלאפון כשר (טלפוניה מדומה) ---
   socket.on('sim:dial', ({ phone } = {}) => {
     socket.data.role = 'sim';
@@ -238,14 +351,21 @@ const SESSION_TTL_MS = 3 * 60 * 60 * 1000;
 setInterval(() => {
   const now = Date.now();
   for (const [pin, session] of gameManager.sessions) {
+    if (session.persistent) continue; // חדרי כיתה קבועים — לא נמחקים (הקוד תמיד חי)
     if (now - (session.lastActive || session.createdAt) > SESSION_TTL_MS) {
       gameManager.removeSession(pin);
     }
   }
 }, 30 * 60 * 1000);
 
+// עדכון תקופתי של לוח התחרות (גיבוי לעדכונים החיים)
+setInterval(() => broadcastClassBoard(), 4000);
+
 // טעינת מאגרי השאלות מהאחסון הקבוע לפני שמתחילים להאזין.
 await quizStore.init();
+
+// יצירת חדר קבוע (קוד יציב) לכל כיתה — כדי שהתלמידות יוכלו לחייג בכל רגע.
+for (const cls of quizStore.listClasses()) ensureClassSession(cls);
 
 httpServer.listen(PORT, () => {
   console.log(`\n🎯 שרת הטריוויה רץ על http://localhost:${PORT}`);
