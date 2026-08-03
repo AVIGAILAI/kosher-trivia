@@ -162,15 +162,18 @@ export function createYemotRouter(gameManager) {
       }
 
       // מצבי המתנה: לובי / חשיפה / טבלה / שאלה שכבר נענתה.
-      // מקריאים את הטקסט המלא רק כשהשלב משתנה, אחרת "רגע" קצר — וממתינים ~7 שניות.
+      // מקריאים את הטקסט המלא רק כשהשלב משתנה, אחרת "רגע" קצר.
       const key = `${phase}|${v.questionNumber || 0}|${v.hasAnswered ? 1 : 0}`;
-      const text = key !== lastKey ? s.promptFor(player.id) : 'רגע';
+      const changed = key !== lastKey;
+      const text = changed ? s.promptFor(player.id) : 'רגע';
       lastKey = key;
-      // המתנה של 9 שניות בין סבבים — מפחית משמעותית את עומס הבקשות לשרת
-      // (חשוב כשהרבה טלפונים מחוברים יחד), ועדיין קולט שאלה חדשה תוך ~9 שניות.
+      // זמן ההמתנה קובע כמה מהר הטלפון קולט שאלה חדשה. אחרי חשיפה/טבלה/מענה — שאלה
+      // הבאה עשויה להגיע כל רגע, אז ממתינים רק ~2ש' (הטלפון יקבל את השאלה תוך ~2ש').
+      // בלובי (לפני תחילת המשחק) אין דחיפות, אז ~4ש' — פחות עומס ופחות חזרות על "רגע".
+      const waitSec = phase === 'lobby' ? 4 : 2;
       await call.read(msg(text), 'tap', {
         max_digits: 1,
-        sec_wait: 9,
+        sec_wait: waitSec,
         allow_empty: true,
         empty_val: '',
         block_asterisk_key: true,
