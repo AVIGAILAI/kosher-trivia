@@ -35,6 +35,7 @@ app.get('/kosher-sim', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'kosher-sim.
 app.get('/editor', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'editor.html')));
 app.get('/rooms', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'rooms.html')));
 app.get('/classes', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'classes.html')));
+app.get('/principal', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'principal.html')));
 
 // --- מסלול טלפוניה אמיתי (Twilio Voice webhooks) ---
 app.use('/voice', createTwilioRouter(gameManager));
@@ -109,7 +110,7 @@ function wireSession(session) {
     for (const p of session.playerList()) {
       io.to(`pv-${p.id}`).emit('player:state', session.playerView(p.id));
     }
-    if (session.classId) broadcastClassBoard(); // עדכון לוח התחרות חי כשהניקוד משתנה
+    if (session.classId) { broadcastClassBoard(); broadcastMaster(); } // עדכון לוח התחרות + פאנל המנהלת חי
   };
 
   session.on('update', pushState);
@@ -176,6 +177,31 @@ function computeClassStandings() {
 
 function broadcastClassBoard() {
   io.to('classboard').emit('classes:state', { standings: computeClassStandings(), at: Date.now() });
+}
+
+// --- פאנל מנהלת: שליטה בכל חדרי הכיתות בו-זמנית (לא כולל סלון) ---
+function classSessions() {
+  const out = [];
+  for (const cls of quizStore.listClasses()) {
+    if (cls.salon) continue;
+    const s = gameManager.getSession(cls.code);
+    if (s) out.push({ cls, s });
+  }
+  return out;
+}
+function masterState() {
+  return classSessions().map(({ cls, s }) => {
+    const hs = s.hostState();
+    const classTotal = hs.players.reduce((a, p) => a + (p.score || 0), 0);
+    return {
+      id: cls.id, name: cls.name, code: cls.code,
+      phase: hs.game.phase, questionNumber: hs.game.questionNumber, totalQuestions: hs.game.totalQuestions,
+      players: hs.players.length, classTotal, quizName: hs.game.quizName || '',
+    };
+  });
+}
+function broadcastMaster() {
+  io.to('master').emit('master:state', { rooms: masterState(), at: Date.now() });
 }
 
 io.on('connection', (socket) => {
@@ -322,6 +348,34 @@ io.on('connection', (socket) => {
     if (typeof ack === 'function') ack({ ok: true, standings: computeClassStandings() });
   });
 
+  // --- פאנל מנהלת: מפעילה/שולטת בכל חדרי הכיתות יחד ---
+  socket.on('master:hello', (_data, ack) => {
+    socket.join('master');
+    if (typeof ack === 'function') ack({ ok: true, rooms: masterState() });
+  });
+  // בחירת מאגר שאלות לכל הכיתות בבת אחת (בלובי בלבד)
+  socket.on('master:setQuiz', ({ quizId } = {}) => {
+    const quiz = quizStore.getQuiz(quizId);
+    if (!quiz) return;
+    for (const { s } of classSessions()) {
+      if (typeof s.game.loadQuestions === 'function') { s.game.loadQuestions(quiz.questions, quiz.name); s.quizId = quiz.id; }
+    }
+    broadcastMaster();
+  });
+  // פעולה על כל הכיתות יחד: start / next / skip / finish / restart
+  socket.on('master:action', ({ action } = {}) => {
+    for (const { s } of classSessions()) {
+      s.hostAction(action);
+      if (action === 'stop' || action === 'restart') {
+        for (const p of s.playerList()) io.to(`pv-${p.id}`).emit('game:ended');
+        s.clearPlayers();
+        s._saved = false;
+      }
+    }
+    broadcastMaster();
+    broadcastClassBoard();
+  });
+
   // --- צד סימולטור פלאפון כשר (טלפוניה מדומה) ---
   socket.on('sim:dial', ({ phone } = {}) => {
     socket.data.role = 'sim';
@@ -358,8 +412,8 @@ setInterval(() => {
   }
 }, 30 * 60 * 1000);
 
-// עדכון תקופתי של לוח התחרות (גיבוי לעדכונים החיים)
-setInterval(() => broadcastClassBoard(), 4000);
+// עדכון תקופתי של לוח התחרות ופאנל המנהלת (גיבוי לעדכונים החיים)
+setInterval(() => { broadcastClassBoard(); broadcastMaster(); }, 4000);
 
 // טעינת מאגרי השאלות מהאחסון הקבוע לפני שמתחילים להאזין.
 await quizStore.init();

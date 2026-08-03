@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>פאנל מנהלת — תחרות כיתות בנות לאה</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family:'Rubik',sans-serif; background:linear-gradient(135deg,#7e3f9d 0%,#5a2c7d 50%,#391c55 100%); min-height:100vh; }
+    .glass { background:rgba(255,255,255,.96); box-shadow:0 20px 40px rgba(0,0,0,.15); }
+  </style>
+</head>
+<body class="p-4 md:p-8 text-white">
+  <div class="max-w-5xl mx-auto">
+    <header class="flex items-center justify-between gap-3 mb-6">
+      <div class="flex items-center gap-4">
+        <img src="/media/logo-white.png" alt="בנות לאה" class="h-20 w-20 md:h-24 md:w-24 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
+        <div>
+          <h1 class="text-3xl font-black drop-shadow">🎛️ פאנל המנהלת</h1>
+          <p class="text-sm text-purple-100 font-semibold">הפעלת כל הכיתות יחד לתחרות בין-כיתתית</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/classes" class="bg-amber-400 hover:bg-amber-300 text-purple-900 font-black px-4 py-2 rounded-xl text-sm shadow">🏆 לוח התחרות</a>
+        <a href="/rooms" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🏫 חדרים</a>
+      </div>
+    </header>
+
+    <!-- בקרות ראשיות -->
+    <div class="glass rounded-3xl p-5 text-slate-800 mb-6">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
+        <label class="font-bold text-sm">מאגר שאלות לכל הכיתות:</label>
+        <select id="quizSelect" class="border-2 border-slate-200 rounded-xl px-3 py-2 font-bold focus:border-purple-400 outline-none"></select>
+        <span class="text-xs text-slate-500">(נקבע לכל הכיתות יחד — לפני שמתחילים)</span>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <button data-act="start"   class="act bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-2xl shadow text-lg">▶ התחל את כולן</button>
+        <button data-act="next"    class="act bg-purple-600 hover:bg-purple-700 text-white font-black py-4 rounded-2xl shadow">➔ שאלה הבאה</button>
+        <button data-act="skip"    class="act bg-sky-600 hover:bg-sky-700 text-white font-black py-4 rounded-2xl shadow">⏭️ דלג לתשובה</button>
+        <button data-act="finish"  class="act bg-amber-500 hover:bg-amber-600 text-white font-black py-4 rounded-2xl shadow">🏁 סיים את כולן</button>
+        <button data-act="restart" class="act bg-rose-500 hover:bg-rose-600 text-white font-black py-4 rounded-2xl shadow">♻ משחק חדש</button>
+      </div>
+      <p class="text-xs text-slate-500 mt-3">💡 אפשר גם להשאיר כל כיתה בקצב שלה (מהחדר שלה). הפאנל הזה נותן לך שליטה על כולן יחד — לא חובה להשתמש בו.</p>
+    </div>
+
+    <!-- מצב כל כיתה -->
+    <div id="rooms" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>
+
+  <script>
+    const socket = io();
+    const $ = (id)=>document.getElementById(id);
+    const PHASE = { lobby:'⏳ ממתין', question:'❓ שאלה', reveal:'💡 תשובה', leaderboard:'📊 טבלה', final:'🏁 הסתיים' };
+
+    socket.on('connect', ()=> socket.emit('master:hello', {}, (res)=>{ if(res&&res.ok) render(res.rooms); }));
+    socket.on('master:state', (s)=> render(s.rooms));
+
+    async function loadQuizzes(){
+      try {
+        const quizzes = await (await fetch('/api/quizzes')).json();
+        $('quizSelect').innerHTML = quizzes.map(q=>`<option value="${q.id}">${escapeHtml(q.name)} (${q.count})</option>`).join('');
+      } catch(e){}
+    }
+    $('quizSelect').onchange = ()=> socket.emit('master:setQuiz', { quizId: $('quizSelect').value });
+
+    document.querySelectorAll('.act').forEach(btn=>{
+      btn.onclick = ()=>{
+        const act = btn.dataset.act;
+        if(act==='restart' && !confirm('משחק חדש לכל הכיתות? זה יאפס את המשחק הנוכחי בכל החדרים.')) return;
+        if(act==='finish' && !confirm('לסיים את המשחק בכל הכיתות עכשיו?')) return;
+        socket.emit('master:action', { action: act });
+      };
+    });
+
+    function render(rooms){
+      rooms = rooms || [];
+      const box = $('rooms'); box.innerHTML = '';
+      rooms.forEach(r=>{
+        const card = document.createElement('div');
+        card.className = 'glass rounded-2xl p-4 text-slate-800';
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-1">
+            <div class="text-xl font-black text-purple-800">🏫 ${escapeHtml(r.name)}</div>
+            <div class="text-sm font-bold bg-purple-50 px-2 py-0.5 rounded-lg">קוד ${r.code}</div>
+          </div>
+          <div class="text-sm font-bold text-slate-600 mb-2">${PHASE[r.phase]||r.phase}${r.phase==='question'||r.phase==='reveal'?` · שאלה ${r.questionNumber}/${r.totalQuestions}`:''}</div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-slate-500">👥 ${r.players} משתתפות</span>
+            <span class="font-black text-purple-800">${r.classTotal.toLocaleString()} נק'</span>
+          </div>`;
+        box.appendChild(card);
+      });
+      if(!rooms.length) box.innerHTML = '<div class="text-purple-100 font-bold">אין כיתות מוגדרות.</div>';
+    }
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    loadQuizzes();
+  </script>
+</body>
+</html>
