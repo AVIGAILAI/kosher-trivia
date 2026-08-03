@@ -46,7 +46,8 @@
           <button id="rosterTemplate" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs">📄 הורדת תבנית</button>
           <button id="rosterExportBtn" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-xs">📊 ייצוא לאקסל</button>
         </div>
-        <textarea id="rosterText" rows="12" dir="rtl" class="w-full border-2 border-slate-200 rounded-xl p-3 text-sm focus:border-purple-400" placeholder="0501234567, שרה כהן&#10;0521112222, רבקה לוי"></textarea>
+        <p class="text-xs text-slate-500 mb-1">כל שורה: <b>טלפון, שם פרטי, שם משפחה</b> (מופרדים בפסיק). לדוגמה: <code dir="ltr">0501234567, שרה, כהן</code></p>
+        <textarea id="rosterText" rows="12" dir="rtl" class="w-full border-2 border-slate-200 rounded-xl p-3 text-sm focus:border-purple-400" placeholder="0501234567, שרה, כהן&#10;0521112222, רבקה, לוי"></textarea>
         <div class="flex justify-between items-center mt-2">
           <span id="rosterCount" class="text-xs text-slate-500"></span>
           <button id="rosterSave" class="bg-sky-600 hover:bg-sky-700 text-white font-black px-6 py-2.5 rounded-xl shadow">💾 שמור רשימה</button>
@@ -390,25 +391,33 @@
 
     // --- רשימת שמות לטלפון (roster) ---
     const rosterCount = ()=>{ $('rosterCount').innerText = parseRoster().length + ' תלמידות ברשימה'; };
+    // ממיר שורת טקסט ל-{phone, first, last}: מפריד פסיק/טאב/נקודה-פסיק (טלפון, שם פרטי, שם משפחה)
+    function parseRosterLine(t){
+      const parts = t.split(/[\t,;]+/).map(s=>s.trim());
+      if(parts.length >= 2 && parts[1]){
+        const phone = parts[0];
+        const first = parts[1] || '';
+        const last  = parts.slice(2).join(' ').trim(); // כל השאר = שם משפחה
+        if(phone && first) return { phone, first, last };
+        return null;
+      }
+      // אין פסיק — מפרידים ברווח: אסימון ראשון = מספר, השני = פרטי, השאר = משפחה
+      const w = t.split(/\s+/);
+      if(w.length < 2) return null;
+      return { phone: w[0], first: w[1] || '', last: w.slice(2).join(' ').trim() };
+    }
     function parseRoster(){
       return $('rosterText').value.split('\n').map(line=>{
         const t = line.trim(); if(!t) return null;
-        let phone, name;
-        const parts = t.split(/[\t,;]+/); // עדיפות למפריד פסיק / טאב / נקודה-פסיק
-        if(parts.length >= 2 && parts[1].trim()){
-          phone = parts[0].trim(); name = parts.slice(1).join(' ').trim();
-        } else { // אין פסיק — מפרידים ברווח: אסימון ראשון = מספר, השאר = שם
-          const w = t.split(/\s+/);
-          phone = w[0]; name = w.slice(1).join(' ').trim();
-        }
-        if(!phone || !name) return null;
-        return { phone, name };
+        return parseRosterLine(t);
       }).filter(Boolean);
     }
+    // שורת תצוגה: טלפון, פרטי, משפחה (בלי פסיק מיותר אם אין משפחה)
+    const rosterLine = e => [e.phone, e.first, e.last].filter(x=>x!=null && x!=='').join(', ');
     async function openRoster(){
       try {
         const list = await api('/api/roster');
-        $('rosterText').value = list.map(e=> e.phone + ', ' + e.name).join('\n');
+        $('rosterText').value = list.map(rosterLine).join('\n');
       } catch(e){ $('rosterText').value=''; }
       rosterCount();
       $('rosterModal').classList.remove('hidden');
@@ -422,7 +431,7 @@
       const entries = parseRoster();
       try {
         const saved = await api('/api/roster', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ entries }) });
-        $('rosterText').value = saved.map(e=> e.phone + ', ' + e.name).join('\n');
+        $('rosterText').value = saved.map(rosterLine).join('\n');
         rosterCount();
         toast('הרשימה נשמרה ✓ (' + saved.length + ' תלמידות)');
       } catch(e){ toast('שגיאה בשמירה: '+e.message); }
@@ -441,8 +450,9 @@
         for(let r=start; r<rows.length; r++){
           const row = rows[r]; if(!row) continue;
           const phone = String(row[0]==null?'':row[0]).trim();
-          const name = String(row[1]==null?'':row[1]).trim();
-          if(phone && name) lines.push(phone + ', ' + name);
+          const fname = String(row[1]==null?'':row[1]).trim();  // שם פרטי
+          const lname = String(row[2]==null?'':row[2]).trim();  // שם משפחה
+          if(phone && fname) lines.push([phone, fname, lname].filter(x=>x!=='').join(', '));
         }
         $('rosterText').value = lines.join('\n');
         rosterCount();
@@ -452,16 +462,18 @@
     };
 
     $('rosterTemplate').onclick = ()=>{
-      const rows = [['טלפון','שם'],['0501234567','שרה כהן'],['0521112222','רבקה לוי']];
+      const rows = [['טלפון','שם פרטי','שם משפחה'],['0501234567','שרה','כהן'],['0521112222','רבקה','לוי']];
       const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{wch:14},{wch:16},{wch:16}];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'שמות');
       XLSX.writeFile(wb, 'תבנית-שמות-לטלפון.xlsx');
     };
 
     $('rosterExportBtn').onclick = ()=>{
-      const rows = [['טלפון','שם'], ...parseRoster().map(e=>[e.phone, e.name])];
+      const rows = [['טלפון','שם פרטי','שם משפחה'], ...parseRoster().map(e=>[e.phone, e.first, e.last||''])];
       const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{wch:14},{wch:16},{wch:16}];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'שמות');
       XLSX.writeFile(wb, 'רשימת-שמות-לטלפון.xlsx');

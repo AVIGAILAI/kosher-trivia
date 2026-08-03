@@ -85,6 +85,7 @@ export class TelephonyGateway {
     if (!rosterName) {
       call.state = 'nameEntry';
       call.nameBuffer = '';
+      if (typeof this.provider.nameMode === 'function') this.provider.nameMode(call.callId, true);
       this.provider.say(call.callId, 'לא זוהית ברשימת השמות. ' + KEYPAD_INSTRUCTIONS);
       this.provider.gather(call.callId, { hint: 'הקלד/י את שמך ואז סולמית (#)' });
       return;
@@ -103,6 +104,7 @@ export class TelephonyGateway {
       return;
     }
     if (digit === '#') { // סיום
+      if (typeof this.provider.nameMode === 'function') this.provider.nameMode(call.callId, false);
       const decoded = decodeHebrewName(call.nameBuffer || '');
       if (decoded && call.session) {
         const p = call.session.getPlayer(call.playerId);

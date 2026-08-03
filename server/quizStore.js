@@ -184,20 +184,47 @@ export function deleteQuiz(id) {
 
 // --- רשימת שמות לפי מספר טלפון (roster) — למחייגות בטלפון כשר ---
 
-/** מחזיר את רשימת השמות כמערך [{ phone, name }] לתצוגה/עריכה. */
-export function listRoster() {
-  const roster = db.roster || {};
-  return Object.keys(roster).map((phone) => ({ phone, name: roster[phone] }));
+/**
+ * מנרמל ערך רשומה לרשימה לצורת { first, last }.
+ * סלחני לפורמט ישן: מחרוזת בודדת → שם פרטי; או { name } → פיצול ברווח ראשון.
+ */
+function normalizeEntry(val) {
+  if (val && typeof val === 'object' && ('first' in val || 'last' in val)) {
+    return {
+      first: String(val.first || '').trim().slice(0, 40),
+      last: String(val.last || '').trim().slice(0, 40),
+    };
+  }
+  const raw = typeof val === 'string' ? val : String((val && val.name) || '');
+  const t = raw.trim();
+  const sp = t.indexOf(' ');
+  if (sp === -1) return { first: t.slice(0, 40), last: '' };
+  return { first: t.slice(0, sp).slice(0, 40), last: t.slice(sp + 1).trim().slice(0, 40) };
 }
 
-/** מחליף את כל הרשימה. מקבל מערך [{ phone, name }]; מנרמל ושומר. */
+/** שם תצוגה מלא מרשומה (שם פרטי + משפחה). */
+function fullName(entry) {
+  const e = normalizeEntry(entry);
+  return (e.first + ' ' + e.last).trim();
+}
+
+/** מחזיר את רשימת השמות כמערך [{ phone, first, last, name }] לתצוגה/עריכה. */
+export function listRoster() {
+  const roster = db.roster || {};
+  return Object.keys(roster).map((phone) => {
+    const e = normalizeEntry(roster[phone]);
+    return { phone, first: e.first, last: e.last, name: fullName(e) };
+  });
+}
+
+/** מחליף את כל הרשימה. מקבל מערך [{ phone, first, last }] (או פורמט ישן); מנרמל ושומר. */
 export function setRoster(entries) {
   const roster = {};
   if (Array.isArray(entries)) {
     for (const e of entries.slice(0, 2000)) {
       const phone = normalizePhone(e && e.phone);
-      const name = String((e && e.name) || '').trim().slice(0, 40);
-      if (phone && name) roster[phone] = name;
+      const norm = normalizeEntry(e);
+      if (phone && (norm.first || norm.last)) roster[phone] = norm;
     }
   }
   db.roster = roster;
@@ -206,18 +233,18 @@ export function setRoster(entries) {
 }
 
 /**
- * חיפוש שם לפי מספר טלפון. מנרמל את שני הצדדים; אם אין התאמה מדויקת,
- * מנסה התאמה לפי 9 הספרות האחרונות (סלחני לקידומות/אפסים מובילים).
+ * חיפוש שם מלא (פרטי + משפחה) לפי מספר טלפון. מנרמל את שני הצדדים; אם אין התאמה
+ * מדויקת, מנסה התאמה לפי 9 הספרות האחרונות (סלחני לקידומות/אפסים מובילים).
  */
 export function lookupName(rawPhone) {
   const roster = db.roster || {};
   const norm = normalizePhone(rawPhone);
   if (!norm) return null;
-  if (roster[norm]) return roster[norm];
+  if (roster[norm]) return fullName(roster[norm]);
   const suffix = norm.slice(-9);
   if (suffix.length === 9) {
     for (const key of Object.keys(roster)) {
-      if (key.slice(-9) === suffix) return roster[key];
+      if (key.slice(-9) === suffix) return fullName(roster[key]);
     }
   }
   return null;

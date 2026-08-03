@@ -42,6 +42,11 @@ export class SimulatedProvider {
     this.io.to(callId).emit('sim:status', { expectingInput: true, hint: opts.hint || '' });
   }
 
+  /** הודעה לסימולטור להציג/להסתיר את מדריך הקלדת השם (עם תצוגה חיה). */
+  nameMode(callId, on) {
+    this.io.to(callId).emit('sim:nameEntry', { on: !!on });
+  }
+
   endCall(callId) {
     this.io.to(callId).emit('sim:ended', {});
   }

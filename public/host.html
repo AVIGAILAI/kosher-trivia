@@ -28,7 +28,7 @@
   <div class="max-w-5xl mx-auto">
     <header class="flex items-center justify-between gap-3 mb-6 text-white">
       <div class="flex items-center gap-4">
-        <img src="/media/logo-white.png" alt="בנות לאה" class="h-24 w-24 md:h-28 md:w-28 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
+        <img src="/media/logo-white.png" alt="בנות לאה" class="h-32 w-32 md:h-44 md:w-44 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
         <div>
           <h1 class="text-3xl font-black drop-shadow">טריוויה — בנות לאה</h1>
           <p class="text-sm text-purple-100 font-semibold">מסך מנחה — להקרנה</p>
@@ -314,8 +314,16 @@
     function buildWorkbook(data){
       if(typeof XLSX === 'undefined'){ alert('ספריית האקסל לא נטענה — בדקי חיבור לאינטרנט'); return; }
       const qs = data.questions || [];
-      // גיליון 1 — סיכום: דירוג, שם, טלפון, אופן השתתפות, ניקוד כולל, כמה נכונות
-      const summary = [['דירוג','שם','טלפון','אופן','ניקוד כולל','תשובות נכונות']];
+      // תאריך ושעת המשחק — כדי שכל קובץ ישויך למשחק שלו
+      const dt = data.playedAt ? new Date(data.playedAt) : new Date();
+      const dateStr = dt.toLocaleString('he-IL', { dateStyle:'short', timeStyle:'short' });
+      // גיליון 1 — סיכום: כותרת משחק+תאריך, ואז דירוג/שם/טלפון/אופן/ניקוד/נכונות
+      const summary = [
+        ['משחק:', data.quizName || ''],
+        ['תאריך המשחק:', dateStr],
+        [],
+        ['דירוג','שם','טלפון','אופן','ניקוד המשחק','תשובות נכונות'],
+      ];
       (data.players||[]).forEach(p => {
         const correct = (p.answers||[]).filter(a => a.correct === true).length;
         summary.push([ p.rank, p.name, p.phone || '', p.kind==='phone'?'טלפון':'דפדפן', p.score, correct + '/' + qs.length ]);
