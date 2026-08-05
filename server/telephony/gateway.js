@@ -78,7 +78,9 @@ export class TelephonyGateway {
     const digits = String(call.phone || '').replace(/\D/g, '');
     const rosterName = quizStore.lookupName(call.phone);
     const name = rosterName || (call.phone ? 'פלאפון ' + digits.slice(-4) : 'מתקשר');
-    const player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits } });
+    // שיוך כיתה: בחדר כיתה — לפי החדר; בסלון — לפי רשימת הטלפונים
+    const cls = (session.classId && session.classId !== 'salon') ? session.className : quizStore.lookupClass(digits);
+    const player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits, className: cls } });
     call.session = session;
     call.playerId = player.id;
     // מחייגת חדשה שאינה ברשימה — מציעים לה להקליד את שמה במקשים; אחרת ישר למשחק.

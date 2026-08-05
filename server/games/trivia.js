@@ -153,6 +153,7 @@ class TriviaGame {
       .map((p) => ({
         name: p.name,
         phone: (p.meta && p.meta.phone) ? p.meta.phone : '',
+        className: (p.meta && p.meta.className) ? p.meta.className : '',
         kind: p.kind,
         score: p.score || 0,
         rank: rankOf[p.id] || '',

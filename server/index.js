@@ -333,13 +333,16 @@ io.on('connection', (socket) => {
       if (typeof ack === 'function') ack({ ok: false, error: 'קוד משחק לא קיים' });
       return;
     }
+    // שיוך כיתה: בחדר כיתה — לפי החדר; בסלון/רגיל לשחקן דפדפן אין טלפון לזהות
+    const cls = (session.classId && session.classId !== 'salon') ? session.className : '';
     let player = playerId ? session.getPlayer(playerId) : null;
     if (player) {
       // חיבור-מחדש: שומרים ניקוד ושם, מסמנים כמחובר
       if (name) player.name = String(name).slice(0, 20);
+      if (cls) { player.meta = player.meta || {}; player.meta.className = cls; }
       player.connected = true;
     } else {
-      player = session.addPlayer({ name, kind: 'web' });
+      player = session.addPlayer({ name, kind: 'web', meta: { className: cls } });
     }
     socket.data.role = 'player';
     socket.data.pin = session.pin;

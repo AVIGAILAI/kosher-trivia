@@ -330,39 +330,58 @@
       // תאריך ושעת המשחק — כדי שכל קובץ ישויך למשחק שלו
       const dt = data.playedAt ? new Date(data.playedAt) : new Date();
       const dateStr = dt.toLocaleString('he-IL', { dateStyle:'short', timeStyle:'short' });
-      // גיליון 1 — סיכום: כותרת משחק+תאריך, ואז דירוג/שם/טלפון/אופן/ניקוד/נכונות
+      const players = data.players || [];
+      const clsOf = p => (p.className && p.className.trim()) ? p.className.trim() : 'ללא כיתה';
+      // גיליון 1 — סיכום: כותרת משחק+תאריך, ואז דירוג/שם/כיתה/טלפון/אופן/ניקוד/נכונות
       const summary = [
         ['משחק:', data.quizName || ''],
         ['תאריך המשחק:', dateStr],
         [],
-        ['דירוג','שם','טלפון','אופן','ניקוד המשחק','תשובות נכונות'],
+        ['דירוג','שם','כיתה','טלפון','אופן','ניקוד המשחק','תשובות נכונות'],
       ];
-      (data.players||[]).forEach(p => {
+      players.forEach(p => {
         const correct = (p.answers||[]).filter(a => a.correct === true).length;
-        summary.push([ p.rank, p.name, p.phone || '', p.kind==='phone'?'טלפון':'דפדפן', p.score, correct + '/' + qs.length ]);
+        summary.push([ p.rank, p.name, clsOf(p), p.phone || '', p.kind==='phone'?'טלפון':'דפדפן', p.score, correct + '/' + qs.length ]);
       });
-      // גיליון 2 — פירוט מלא: שורה לכל שחקן, עמודה לכל שאלה (התשובה שנתן) + ✓/✗
-      const header = ['שם','טלפון','ניקוד כולל'];
+      // גיליון 2 — סיכום כיתתי: איזו כיתה צברה הכי הרבה (התחרות הבין-כיתתית)
+      const byClass = {};
+      players.forEach(p => {
+        const c = clsOf(p);
+        byClass[c] = byClass[c] || { students:0, score:0, correct:0 };
+        byClass[c].students++;
+        byClass[c].score += (p.score||0);
+        byClass[c].correct += (p.answers||[]).filter(a => a.correct === true).length;
+      });
+      const classRows = Object.keys(byClass)
+        .map(c => ({ c, ...byClass[c] }))
+        .sort((a,b) => b.score - a.score);
+      const classSheet = [['דירוג','כיתה','מס׳ תלמידות','ניקוד כיתתי','סה״כ תשובות נכונות']];
+      classRows.forEach((r,i) => classSheet.push([ i+1, r.c, r.students, r.score, r.correct ]));
+      // גיליון 3 — פירוט מלא: שורה לכל שחקן, עמודה לכל שאלה (התשובה שנתן) + ✓/✗
+      const header = ['שם','כיתה','טלפון','ניקוד כולל'];
       qs.forEach((q,i) => header.push('ש' + (q.qNum||i+1) + ': ' + q.text));
       const detail = [header];
-      (data.players||[]).forEach(p => {
-        const row = [ p.name, p.phone || '', p.score ];
+      players.forEach(p => {
+        const row = [ p.name, clsOf(p), p.phone || '', p.score ];
         (p.answers||[]).forEach(a => {
           if(a.answerText === '' && a.correct === null) row.push('—'); // לא ענתה
           else row.push((a.correct ? '✓ ' : '✗ ') + a.answerText + ' (' + a.points + ')');
         });
         detail.push(row);
       });
-      // גיליון 3 — מפתח השאלות והתשובות הנכונות
+      // גיליון 4 — מפתח השאלות והתשובות הנכונות
       const key = [['#','שאלה','תשובה נכונה']];
       qs.forEach((q,i) => key.push([ q.qNum || i+1, q.text, q.correctText ]));
 
       const wb = XLSX.utils.book_new();
       const ws1 = XLSX.utils.aoa_to_sheet(summary);
-      ws1['!cols'] = [{wch:7},{wch:20},{wch:14},{wch:9},{wch:12},{wch:14}];
+      ws1['!cols'] = [{wch:7},{wch:20},{wch:8},{wch:14},{wch:9},{wch:12},{wch:14}];
       XLSX.utils.book_append_sheet(wb, ws1, 'סיכום');
+      const wsC = XLSX.utils.aoa_to_sheet(classSheet);
+      wsC['!cols'] = [{wch:7},{wch:10},{wch:14},{wch:14},{wch:18}];
+      XLSX.utils.book_append_sheet(wb, wsC, 'סיכום כיתתי');
       const ws2 = XLSX.utils.aoa_to_sheet(detail);
-      ws2['!cols'] = [{wch:20},{wch:14},{wch:12}].concat(qs.map(()=>({wch:28})));
+      ws2['!cols'] = [{wch:20},{wch:8},{wch:14},{wch:12}].concat(qs.map(()=>({wch:28})));
       XLSX.utils.book_append_sheet(wb, ws2, 'פירוט תשובות');
       const ws3 = XLSX.utils.aoa_to_sheet(key);
       ws3['!cols'] = [{wch:5},{wch:50},{wch:24}];

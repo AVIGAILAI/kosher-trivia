@@ -37,15 +37,18 @@ function genClassCode(used) {
   return code;
 }
 
-/** רשימת ברירת מחדל: סלון (כל בית הספר) + 5 כיתות, כל אחת עם קוד קבוע. */
+// 8 הכיתות של בית הספר (id יציב → שם). הקוד נוצר פעם אחת ונשאר קבוע.
+const SCHOOL_CLASSES = [
+  ['t1', 'ט1'], ['t2', 'ט2'], ['y1', 'י1'], ['y2', 'י2'],
+  ['ya1', 'יא1'], ['ya2', 'יא2'], ['yb1', 'יב1'], ['yb2', 'יב2'],
+];
+const CLASS_SCHEMA = 'v2-8'; // גרסת מבנה הכיתות; שינוי → מיגרציה חד-פעמית
+
+/** רשימת ברירת מחדל: סלון (כל בית הספר) + 8 כיתות, כל אחת עם קוד קבוע. */
 function defaultClasses() {
   const used = new Set();
   const mk = (id, name, salon) => ({ id, name, code: genClassCode(used), salon: !!salon });
-  return [
-    mk('salon', 'סלון', true),
-    mk('c1', 'כיתה 1'), mk('c2', 'כיתה 2'), mk('c3', 'כיתה 3'),
-    mk('c4', 'כיתה 4'), mk('c5', 'כיתה 5'),
-  ];
+  return [mk('salon', 'סלון', true), ...SCHOOL_CLASSES.map(([id, name]) => mk(id, name))];
 }
 
 /** מוודא שכל השדות קיימים אחרי טעינה (Redis/קובץ ישן) + יוצר כיתות ברירת מחדל. מחזיר true אם שינה. */
@@ -56,6 +59,15 @@ function ensureDbShape() {
   if (!Array.isArray(db.gameHistory)) { db.gameHistory = []; changed = true; }
   if (typeof db.classResetAt !== 'number') { db.classResetAt = 0; changed = true; }
   if (!Array.isArray(db.classes) || db.classes.length === 0) { db.classes = defaultClasses(); changed = true; }
+  // מיגרציה חד-פעמית ל-8 הכיתות האמיתיות (שומרת את הסלון הקיים + הקוד שלו).
+  if (db.classSchema !== CLASS_SCHEMA) {
+    const salon = (db.classes || []).find((c) => c.salon);
+    const used = new Set(salon ? [salon.code] : []);
+    const eight = SCHOOL_CLASSES.map(([id, name]) => ({ id, name, code: genClassCode(used), salon: false }));
+    db.classes = [salon || { id: 'salon', name: 'סלון', code: genClassCode(used), salon: true }, ...eight];
+    db.classSchema = CLASS_SCHEMA;
+    changed = true;
+  }
   // השלמת קוד קבוע לכל כיתה שאין לה (הקוד לא משתנה לעולם — התלמידות מקישות אותו)
   const used = new Set(db.classes.map((c) => c.code).filter(Boolean));
   for (const c of db.classes) {
@@ -228,17 +240,18 @@ export function deleteQuiz(id) {
  * סלחני לפורמט ישן: מחרוזת בודדת → שם פרטי; או { name } → פיצול ברווח ראשון.
  */
 function normalizeEntry(val) {
-  if (val && typeof val === 'object' && ('first' in val || 'last' in val)) {
+  if (val && typeof val === 'object' && ('first' in val || 'last' in val || 'cls' in val || 'class' in val)) {
     return {
       first: String(val.first || '').trim().slice(0, 40),
       last: String(val.last || '').trim().slice(0, 40),
+      cls: String(val.cls || val.class || '').trim().slice(0, 20), // כיתה (ט1, י2 ...)
     };
   }
   const raw = typeof val === 'string' ? val : String((val && val.name) || '');
   const t = raw.trim();
   const sp = t.indexOf(' ');
-  if (sp === -1) return { first: t.slice(0, 40), last: '' };
-  return { first: t.slice(0, sp).slice(0, 40), last: t.slice(sp + 1).trim().slice(0, 40) };
+  if (sp === -1) return { first: t.slice(0, 40), last: '', cls: '' };
+  return { first: t.slice(0, sp).slice(0, 40), last: t.slice(sp + 1).trim().slice(0, 40), cls: '' };
 }
 
 /** שם תצוגה מלא מרשומה (שם פרטי + משפחה). */
@@ -247,28 +260,37 @@ function fullName(entry) {
   return (e.first + ' ' + e.last).trim();
 }
 
-/** מחזיר את רשימת השמות כמערך [{ phone, first, last, name }] לתצוגה/עריכה. */
+/** מחזיר את רשימת השמות כמערך [{ phone, first, last, class, name }] לתצוגה/עריכה. */
 export function listRoster() {
   const roster = db.roster || {};
   return Object.keys(roster).map((phone) => {
     const e = normalizeEntry(roster[phone]);
-    return { phone, first: e.first, last: e.last, name: fullName(e) };
+    return { phone, first: e.first, last: e.last, class: e.cls, name: fullName(e) };
   });
 }
 
-/** מחליף את כל הרשימה. מקבל מערך [{ phone, first, last }] (או פורמט ישן); מנרמל ושומר. */
+/** מחליף את כל הרשימה. מקבל מערך [{ phone, first, last, class }] (או פורמט ישן); מנרמל ושומר. */
 export function setRoster(entries) {
   const roster = {};
   if (Array.isArray(entries)) {
     for (const e of entries.slice(0, 2000)) {
       const phone = normalizePhone(e && e.phone);
       const norm = normalizeEntry(e);
-      if (phone && (norm.first || norm.last)) roster[phone] = norm;
+      if (phone && (norm.first || norm.last || norm.cls)) roster[phone] = norm;
     }
   }
   db.roster = roster;
   save();
   return listRoster();
+}
+
+/** חיפוש הכיתה (מהרשימה) לפי מספר טלפון — לזיהוי אוטומטי כשמחייגות לסלון. */
+export function lookupClass(rawPhone) {
+  const roster = db.roster || {};
+  const norm = normalizePhone(rawPhone);
+  if (!norm) return '';
+  const hit = roster[norm] || (norm.length >= 9 ? roster[Object.keys(roster).find((k) => k.slice(-9) === norm.slice(-9))] : null);
+  return hit ? normalizeEntry(hit).cls : '';
 }
 
 /**

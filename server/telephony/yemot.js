@@ -103,11 +103,14 @@ export function createYemotRouter(gameManager) {
     // שם אמיתי מרשימת המורה לפי מספר הטלפון; אם אין — "פלאפון XXXX"
     const rosterName = quizStore.lookupName(call.phone);
     const fallbackName = last4 ? 'פלאפון ' + last4 : 'מתקשר';
+    // שיוך כיתה: בחדר כיתה — לפי החדר; בסלון — לפי רשימת הטלפונים (זיהוי אוטומטי)
+    const cls = (session.classId && session.classId !== 'salon') ? session.className : quizStore.lookupClass(digits);
     let player = digits
       ? session.playerList().find((p) => p.kind === 'phone' && p.meta && p.meta.phone === digits)
       : null;
     if (player) {
       if (rosterName) player.name = rosterName; // עדכון לשם האמיתי אם נוסף לרשימה בינתיים
+      if (cls) { player.meta = player.meta || {}; player.meta.className = cls; }
       session.setConnected(player.id, true); // חזר למשחק — הניקוד נשמר, והמסך מתעדכן
     } else {
       // מחייגת חדשה שאינה ברשימה — מציעים לה להקליד את שמה במקשים
@@ -116,7 +119,7 @@ export function createYemotRouter(gameManager) {
         const typed = await askNameByKeypad(call);
         if (typed) name = typed;
       }
-      player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits } });
+      player = session.addPlayer({ name, kind: 'phone', meta: { callId: call.callId, phone: digits, className: cls } });
     }
     callMap.set(call.callId, { pin: session.pin, playerId: player.id });
 
