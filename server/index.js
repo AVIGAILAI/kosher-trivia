@@ -204,6 +204,25 @@ function broadcastMaster() {
   io.to('master').emit('master:state', { rooms: masterState(), at: Date.now() });
 }
 
+/**
+ * מחיל מאגר שאלות על משחק בצורה חסינה, כך ש**כל שאלון שנבחר אכן נשמע בטלפון**:
+ * - בלובי: רענון לא-הרסני (קולט גם עריכות של אותו מאגר).
+ * - אחרי/באמצע משחק ומאגר שונה: איפוס ללובי + טעינה (אחרת החדר "נתקע" על הישן).
+ * - אחרי/באמצע משחק ואותו מאגר: לא נוגעים (חיבור-מחדש לא יאפס משחק רץ).
+ */
+function applyQuizToSession(session, quiz) {
+  if (!quiz || !session || !session.game) return;
+  const phase = session.game.phase;
+  if (phase === 'lobby') {
+    if (typeof session.game.loadQuestions === 'function') session.game.loadQuestions(quiz.questions, quiz.name);
+    session.quizId = quiz.id;
+  } else if (quiz.id !== session.quizId) {
+    if (typeof session.game.resetWithQuestions === 'function') session.game.resetWithQuestions(quiz.questions, quiz.name);
+    session.quizId = quiz.id;
+    session._saved = false;
+  }
+}
+
 io.on('connection', (socket) => {
   // --- צד מנחה ---
   // host:hello — יצירת משחק חדש או חיבור-מחדש למשחק קיים (רענון/נפילת רשת).
@@ -275,10 +294,7 @@ io.on('connection', (socket) => {
     const session = authorizedSession();
     if (!session) return;
     const quiz = quizStore.getQuiz(quizId);
-    if (quiz && typeof session.game.loadQuestions === 'function') {
-      session.game.loadQuestions(quiz.questions, quiz.name);
-      session.quizId = quiz.id;
-    }
+    if (quiz) applyQuizToSession(session, quiz);
   });
 
   socket.on('host:start', () => {
@@ -357,9 +373,7 @@ io.on('connection', (socket) => {
   socket.on('master:setQuiz', ({ quizId } = {}) => {
     const quiz = quizStore.getQuiz(quizId);
     if (!quiz) return;
-    for (const { s } of classSessions()) {
-      if (typeof s.game.loadQuestions === 'function') { s.game.loadQuestions(quiz.questions, quiz.name); s.quizId = quiz.id; }
-    }
+    for (const { s } of classSessions()) applyQuizToSession(s, quiz);
     broadcastMaster();
   });
   // פעולה על כל הכיתות יחד: start / next / skip / finish / restart

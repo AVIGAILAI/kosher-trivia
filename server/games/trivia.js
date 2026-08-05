@@ -50,10 +50,29 @@ class TriviaGame {
     this.loadQuestion(0);
   }
 
-  /** החלפת מאגר השאלות — מותר רק בלובי, לפני תחילת המשחק. */
+  /** החלפת מאגר השאלות — רענון לא-הרסני, מותר רק בלובי (לפני תחילת המשחק). */
   loadQuestions(questions, quizName = '') {
     if (this.phase !== 'lobby') return false;
     if (!Array.isArray(questions)) return false;
+    this.questions = questions;
+    if (quizName) this.quizName = quizName;
+    this.session.emit('update');
+    return true;
+  }
+
+  /**
+   * החלפת מאגר תוך **איפוס המשחק ללובי** — לשימוש כשמחליפים מאגר אחרי/באמצע משחק
+   * (אחרת החדר "נתקע" על המאגר הישן והטלפון לא שומע את השאלון החדש).
+   */
+  resetWithQuestions(questions, quizName = '') {
+    if (!Array.isArray(questions)) return false;
+    this.clearTimer();
+    this.phase = 'lobby';
+    this.currentIdx = -1;
+    this.answers.clear();
+    this.answerHistory = {};
+    this.scored = false;
+    for (const p of this.session.playerList()) p.score = 0;
     this.questions = questions;
     if (quizName) this.quizName = quizName;
     this.session.emit('update');
