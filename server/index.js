@@ -141,12 +141,18 @@ function saveFinishedGame(session) {
     if (session._saved) return;
     const players = session.playerList();
     const classTotal = players.reduce((s, p) => s + (p.score || 0), 0);
+    // פירוק לפי כיתה — כך שגם משחק סלון בודד מזין את כל הכיתות שהשתתפו בו
+    const classBreakdown = {};
+    for (const p of players) {
+      const cn = classNameOfPlayer(session, p);
+      if (cn) classBreakdown[cn] = (classBreakdown[cn] || 0) + (p.score || 0);
+    }
     const data = typeof session.game.exportData === 'function' ? session.game.exportData() : null;
     quizStore.saveGame({
       classId: session.classId,
       className: session.className,
       quizName: (data && data.quizName) || session.game.quizName || '',
-      classTotal, data,
+      classTotal, classBreakdown, data,
     });
     session._saved = true;
     broadcastClassBoard();
@@ -155,21 +161,33 @@ function saveFinishedGame(session) {
   }
 }
 
-/** דירוג הכיתות (ללא סלון): נצבר מההיסטוריה + חי מהמשחקים הפעילים (לא-final, למניעת ספירה כפולה). */
+/** כיתת השחקן: תיוג אישי (meta.className, למשל בסלון) → אחרת שם החדר (חדר כיתה). */
+function classNameOfPlayer(session, player) {
+  if (player.meta && player.meta.className) return player.meta.className;
+  if (session.classId && session.classId !== 'salon') return session.className || '';
+  return '';
+}
+
+/**
+ * דירוג הכיתות **לפי שם כיתה** (ללא הסלון עצמו): נצבר מההיסטוריה + חי מהמשחקים הפעילים
+ * (לא-final, למניעת ספירה כפולה). מקבץ שחקנים לפי כיתתם — כך שגם משחק **סלון** אחד
+ * (כשכולן מחייגות לקוד הסלון ומזוהות מהרשימה) מזין את ההישג הכיתתי של כל כיתה.
+ */
 function computeClassStandings() {
   const classes = quizStore.listClasses().filter((c) => !c.salon);
-  const accumulated = quizStore.accumulatedByClass();
+  const accumulated = quizStore.accumulatedByClass(); // לפי שם כיתה
   const live = {};
   for (const s of gameManager.sessions.values()) {
-    if (!s.classId || (s.game && s.game.phase === 'final')) continue; // משחק שהסתיים כבר נצבר בהיסטוריה
-    let sum = 0;
-    for (const p of s.playerList()) sum += p.score || 0;
-    live[s.classId] = (live[s.classId] || 0) + sum;
+    if (s.game && s.game.phase === 'final') continue; // כבר נצבר בהיסטוריה
+    for (const p of s.playerList()) {
+      const cn = classNameOfPlayer(s, p);
+      if (cn) live[cn] = (live[cn] || 0) + (p.score || 0);
+    }
   }
   return classes
     .map((c) => {
-      const acc = accumulated[c.id] || 0;
-      const lv = live[c.id] || 0;
+      const acc = accumulated[c.name] || 0;
+      const lv = live[c.name] || 0;
       return { id: c.id, name: c.name, code: c.code, accumulated: acc, live: lv, total: acc + lv };
     })
     .sort((a, b) => b.total - a.total);
@@ -192,11 +210,16 @@ function classSessions() {
 function masterState() {
   return classSessions().map(({ cls, s }) => {
     const hs = s.hostState();
+    const g = hs.game;
     const classTotal = hs.players.reduce((a, p) => a + (p.score || 0), 0);
     return {
       id: cls.id, name: cls.name, code: cls.code,
-      phase: hs.game.phase, questionNumber: hs.game.questionNumber, totalQuestions: hs.game.totalQuestions,
-      players: hs.players.length, classTotal, quizName: hs.game.quizName || '',
+      phase: g.phase, questionNumber: g.questionNumber, totalQuestions: g.totalQuestions,
+      players: hs.players.length, classTotal, quizName: g.quizName || '',
+      // נתוני השאלה הנוכחית — כדי שהמנהלת תראה בעצמה מה מוצג + הזמן שרץ
+      question: g.question ? { text: g.question.text, options: g.question.options } : null,
+      timeLeft: g.timeLeft, timeLimit: g.timeLimit, answersCount: g.answersCount,
+      correct: (g.phase === 'reveal') ? g.correct : null,
     };
   });
 }

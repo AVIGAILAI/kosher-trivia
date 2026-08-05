@@ -46,6 +46,17 @@
       <p class="text-xs text-slate-500 mt-3">💡 אפשר גם להשאיר כל כיתה בקצב שלה (מהחדר שלה). הפאנל הזה נותן לך שליטה על כולן יחד — לא חובה להשתמש בו.</p>
     </div>
 
+    <!-- תצוגת השאלה הנוכחית + טיימר (מה שהתלמידות רואות עכשיו) -->
+    <div id="presenter" class="hidden glass rounded-3xl p-6 text-slate-800 mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <span id="prQNum" class="text-sm font-bold bg-purple-100 text-purple-800 px-3 py-1 rounded-full"></span>
+        <div class="flex items-center gap-2 bg-purple-700 text-white px-4 py-1.5 rounded-xl"><span>⏱️</span><span id="prTimer" class="text-2xl font-black text-yellow-300">—</span></div>
+      </div>
+      <h2 id="prText" class="text-2xl md:text-3xl font-black text-center leading-relaxed mb-4"></h2>
+      <div id="prOptions" class="grid md:grid-cols-2 gap-3"></div>
+      <p id="prReveal" class="hidden text-center text-xl font-black text-emerald-600 mt-4"></p>
+    </div>
+
     <!-- מצב כל כיתה -->
     <div id="rooms" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
   </div>
@@ -75,8 +86,42 @@
       };
     });
 
+    // --- תצוגת השאלה + טיימר חי (כל הכיתות מסונכרנות על אותו שאלון) ---
+    const OPT_LETTER=['1','2','3','4'], OPT_CLASS=['bg-rose-500','bg-sky-600','bg-amber-500 text-slate-900','bg-emerald-500'];
+    let timerLeft = 0, timerInt = null;
+    function stopTimer(){ if(timerInt){ clearInterval(timerInt); timerInt=null; } }
+    function paintTimer(){ $('prTimer').innerText = timerLeft>0 ? timerLeft : '0'; }
+    function renderPresenter(rooms){
+      // נציג מייצג: כיתה ראשונה שבמצב שאלה/חשיפה (כולן מסונכרנות)
+      const rep = rooms.find(r=>r.phase==='question') || rooms.find(r=>r.phase==='reveal');
+      const box = $('presenter');
+      if(!rep || !rep.question){ box.classList.add('hidden'); stopTimer(); return; }
+      box.classList.remove('hidden');
+      $('prQNum').innerText = 'שאלה ' + (rep.questionNumber||'') + ' מתוך ' + (rep.totalQuestions||'');
+      $('prText').innerText = rep.question.text || '';
+      const opts = rep.question.options || [];
+      $('prOptions').innerHTML = opts.map((o,i)=>{
+        const isCorrect = rep.phase==='reveal' && rep.correct===i;
+        return `<div class="p-3 rounded-2xl text-white font-bold flex items-center gap-3 ${OPT_CLASS[i]} ${isCorrect?'ring-4 ring-emerald-300':''}">
+          <span class="w-8 h-8 rounded-lg bg-white/30 flex items-center justify-center font-black">${OPT_LETTER[i]}</span>
+          <span>${escapeHtml(o)}</span> ${isCorrect?'<span class="mr-auto">✅</span>':''}</div>`;
+      }).join('');
+      if(rep.phase==='reveal'){
+        stopTimer(); $('prTimer').innerText='✓';
+        $('prReveal').classList.remove('hidden');
+        $('prReveal').innerText = 'התשובה הנכונה: ' + (opts[rep.correct]!=null?opts[rep.correct]:'');
+      } else {
+        $('prReveal').classList.add('hidden');
+        // סנכרון הטיימר לזמן שהשרת דיווח, וספירה-לאחור חלקה מקומית
+        timerLeft = rep.timeLeft || 0; paintTimer();
+        stopTimer();
+        timerInt = setInterval(()=>{ timerLeft = Math.max(0, timerLeft-1); paintTimer(); }, 1000);
+      }
+    }
+
     function render(rooms){
       rooms = rooms || [];
+      renderPresenter(rooms);
       const box = $('rooms'); box.innerHTML = '';
       rooms.forEach(r=>{
         const card = document.createElement('div');

@@ -369,6 +369,8 @@ export function saveGame(rec = {}) {
     quizName: rec.quizName || '',
     playedAt: Date.now(),
     classTotal: Number(rec.classTotal) || 0,
+    // פירוק ניקוד לפי כיתה (שם) — כך שגם משחק סלון אחד מזין את כל הכיתות שהשתתפו בו
+    classBreakdown: (rec.classBreakdown && typeof rec.classBreakdown === 'object') ? rec.classBreakdown : null,
     data: rec.data || null,
   };
   db.gameHistory.push(record);
@@ -405,13 +407,21 @@ export function resetClassScores() {
   return db.classResetAt;
 }
 
-/** נקודות נצברות לכל כיתה = Σ classTotal בהיסטוריה מאז האיפוס (ללא סלון). */
+/**
+ * נקודות נצברות לכל כיתה (לפי **שם הכיתה**) מההיסטוריה מאז האיפוס.
+ * מעדיף פירוק לפי כיתה (classBreakdown) — כך שגם משחק סלון בודד מזין את כל הכיתות
+ * שהשתתפו בו. תאימות לאחור: רשומות ישנות בלי פירוק נספרות לפי className/classTotal.
+ */
 export function accumulatedByClass() {
   const since = db.classResetAt || 0;
   const acc = {};
   for (const g of db.gameHistory || []) {
-    if (!g.classId || g.playedAt < since) continue;
-    acc[g.classId] = (acc[g.classId] || 0) + (Number(g.classTotal) || 0);
+    if (g.playedAt < since) continue;
+    if (g.classBreakdown && typeof g.classBreakdown === 'object') {
+      for (const [cn, pts] of Object.entries(g.classBreakdown)) acc[cn] = (acc[cn] || 0) + (Number(pts) || 0);
+    } else if (g.className) {
+      acc[g.className] = (acc[g.className] || 0) + (Number(g.classTotal) || 0);
+    }
   }
   return acc;
 }
