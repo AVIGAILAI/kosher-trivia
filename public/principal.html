@@ -23,6 +23,7 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
+        <button id="btnSound" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🔊 צליל</button>
         <a href="/classes" class="bg-amber-400 hover:bg-amber-300 text-purple-900 font-black px-4 py-2 rounded-xl text-sm shadow">🏆 לוח התחרות</a>
         <a href="/editor" target="_blank" class="bg-yellow-400 hover:bg-yellow-500 text-slate-800 font-black px-4 py-2 rounded-xl text-sm shadow">✏️ ערוך שאלות</a>
         <a href="/rooms" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🏫 חדרים</a>
@@ -66,6 +67,19 @@
     const $ = (id)=>document.getElementById(id);
     const PHASE = { lobby:'⏳ ממתין', question:'❓ שאלה', reveal:'💡 תשובה', leaderboard:'📊 טבלה', final:'🏁 הסתיים' };
 
+    // מנגינת מתח — מתנגנת בזמן שאלה (כשמפעילים לכל הכיתות מהפאנל)
+    let soundOn = true;
+    const suspenseAudio = new Audio('/media/suspense.mp3');
+    suspenseAudio.loop = true; suspenseAudio.volume = 0.55;
+    function primeAudio(){ try{ suspenseAudio.play().then(()=>{ suspenseAudio.pause(); suspenseAudio.currentTime=0; }).catch(()=>{}); }catch(e){} }
+    function playSuspense(){ if(soundOn){ try{ suspenseAudio.play().catch(()=>{}); }catch(e){} } }
+    function stopSuspense(){ try{ suspenseAudio.pause(); suspenseAudio.currentTime=0; }catch(e){} }
+    $('btnSound').onclick = ()=>{
+      soundOn = !soundOn;
+      $('btnSound').innerText = soundOn ? '🔊 צליל' : '🔇 מושתק';
+      if(!soundOn) stopSuspense();
+    };
+
     socket.on('connect', ()=> socket.emit('master:hello', {}, (res)=>{ if(res&&res.ok) render(res.rooms); }));
     socket.on('master:state', (s)=> render(s.rooms));
 
@@ -80,6 +94,7 @@
     document.querySelectorAll('.act').forEach(btn=>{
       btn.onclick = ()=>{
         const act = btn.dataset.act;
+        primeAudio(); // "שחרור" נגן המנגינה תחת מגע המשתמש (מדיניות autoplay)
         if(act==='restart' && !confirm('משחק חדש לכל הכיתות? זה יאפס את המשחק הנוכחי בכל החדרים.')) return;
         if(act==='finish' && !confirm('לסיים את המשחק בכל הכיתות עכשיו?')) return;
         socket.emit('master:action', { action: act });
@@ -95,7 +110,7 @@
       // נציג מייצג: כיתה ראשונה שבמצב שאלה/חשיפה (כולן מסונכרנות)
       const rep = rooms.find(r=>r.phase==='question') || rooms.find(r=>r.phase==='reveal');
       const box = $('presenter');
-      if(!rep || !rep.question){ box.classList.add('hidden'); stopTimer(); return; }
+      if(!rep || !rep.question){ box.classList.add('hidden'); stopTimer(); stopSuspense(); return; }
       box.classList.remove('hidden');
       $('prQNum').innerText = 'שאלה ' + (rep.questionNumber||'') + ' מתוך ' + (rep.totalQuestions||'');
       $('prText').innerText = rep.question.text || '';
@@ -107,11 +122,12 @@
           <span>${escapeHtml(o)}</span> ${isCorrect?'<span class="mr-auto">✅</span>':''}</div>`;
       }).join('');
       if(rep.phase==='reveal'){
-        stopTimer(); $('prTimer').innerText='✓';
+        stopTimer(); stopSuspense(); $('prTimer').innerText='✓';
         $('prReveal').classList.remove('hidden');
         $('prReveal').innerText = 'התשובה הנכונה: ' + (opts[rep.correct]!=null?opts[rep.correct]:'');
       } else {
         $('prReveal').classList.add('hidden');
+        if(suspenseAudio.paused) playSuspense(); // מנגינת מתח בזמן שאלה
         // סנכרון הטיימר לזמן שהשרת דיווח, וספירה-לאחור חלקה מקומית
         timerLeft = rep.timeLeft || 0; paintTimer();
         stopTimer();
