@@ -125,6 +125,7 @@ export function createYemotRouter(gameManager) {
 
     // 3. לולאת המשחק — מסונכרנת עם קצב המנחה
     let lastKey = '';
+    let lastReadQNum = -1; // השאלה שכבר הקראנו במלואה (כדי לא לחזור עליה בכל בדיקה)
     while (true) {
       const s = gameManager.getSession(session.pin);
       if (!s) return call.id_list_message(msg('המשחק הסתיים. תודה שהשתתפתם'));
@@ -137,18 +138,26 @@ export function createYemotRouter(gameManager) {
         return call.id_list_message(msg(s.promptFor(player.id)));
       }
 
-      // שאלה פעילה שעדיין לא ענו עליה → הקראה + קליטת הקשה
+      // שאלה פעילה שעדיין לא ענו עליה → הקראה + קליטת הקשה.
+      // חשוב: לא נשארים ב-read ארוך אחד (עד 55ש') — אחרת אם המנחה מסיים/מעביר שאלה
+      // באמצע, הטלפון "תקוע" עד שמקישים. במקום זה: הקראה מלאה פעם אחת, ואז בדיקות
+      // קצרות חוזרות (~7ש') שמסנכרנות מהר עם סיום המשחק / שאלה הבאה. המחייגת עדיין
+      // מקבלת את כל זמן השאלה לענות (הלולאה ממשיכה כל עוד השאלה פעילה).
       if (phase === 'question' && !v.hasAnswered) {
         const opts = v.options || [];
         const n = opts.length || v.numOptions || 4;
         const allowed = Array.from({ length: n }, (_, i) => i + 1);
-        const wait = Math.max(Math.min(v.timeLeft || 20, 55), 6);
-        // פיצול לקטעים = הפסקות טבעיות בין השאלה לתשובות → הרבה יותר ברור להאזנה
-        const segments = [
-          { type: 'text', data: `שאלה מספר ${v.questionNumber || ''}`, removeInvalidChars: true },
-          { type: 'text', data: v.questionText || '', removeInvalidChars: true },
-          ...opts.map((o, i) => ({ type: 'text', data: `לתשובה ${o}, הקש ${i + 1}`, removeInvalidChars: true })),
-        ];
+        const qn = v.questionNumber || 0;
+        const firstRead = qn !== lastReadQNum;
+        lastReadQNum = qn;
+        const segments = firstRead
+          ? [
+              { type: 'text', data: `שאלה מספר ${qn}`, removeInvalidChars: true },
+              { type: 'text', data: v.questionText || '', removeInvalidChars: true },
+              ...opts.map((o, i) => ({ type: 'text', data: `לתשובה ${o}, הקש ${i + 1}`, removeInvalidChars: true })),
+            ]
+          : msg('הקישי את מספר תשובתך'); // בדיקה חוזרת — תזכורת קצרה בלבד
+        const wait = firstRead ? 8 : 7; // חלון קצר → סנכרון מהיר לשינוי מצב
         const digit = await call.read(segments, 'tap', {
           max_digits: 1,
           digits_allowed: allowed,
