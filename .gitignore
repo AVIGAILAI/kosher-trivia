@@ -11,3 +11,6 @@ twilio_2FA_recovery_code.txt
 # קובץ מקור לוגו (כבד) — משתמשים ב-public/media/logo.jpg
 *.tif
 *.tiff
+
+# קובץ מקור מנגינת מתח (כבד) — משתמשים ב-public/media/suspense.mp3
+Quiz Show Tension.mp3

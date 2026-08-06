@@ -189,8 +189,16 @@
     function show(view){ views.forEach(v => document.getElementById('view-'+v).classList.toggle('hidden', v!==view)); }
 
     // ===== צליל: מתח בזמן שאלה + תרועת ניצחון =====
-    let audioCtx = null, suspenseTimer = null, soundOn = true;
-    function ensureAudio(){ try{ if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); }catch(e){} }
+    let audioCtx = null, soundOn = true;
+    // מנגינת המתח — קובץ שהמנהלת צירפה (מתנגן בלולאה מרגע השאלה עד המעבר לשאלה הבאה)
+    const suspenseAudio = new Audio('/media/suspense.mp3');
+    suspenseAudio.loop = true;
+    suspenseAudio.volume = 0.55;
+    function ensureAudio(){
+      try{ if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); }catch(e){}
+      // "שחרור" נגן המנגינה תחת מגע המשתמש (מדיניות autoplay של הדפדפן)
+      try{ suspenseAudio.play().then(()=>{ suspenseAudio.pause(); suspenseAudio.currentTime=0; }).catch(()=>{}); }catch(e){}
+    }
     function beep(freq, dur=0.15, vol=0.14, type='sine', when=0){
       if(!soundOn || !audioCtx) return;
       const o=audioCtx.createOscillator(), g=audioCtx.createGain();
@@ -200,22 +208,12 @@
       g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
       o.start(t); o.stop(t+dur+0.02);
     }
+    // מנגינת מתח מתנגנת בלולאה מרגע שהשאלה עולה עד המעבר לשאלה הבאה
     function startSuspense(){
-      stopSuspense(); if(!soundOn) return; ensureAudio();
-      // מוזיקת מתח אמיתית: אוסטינטו במינור (תבנית מתנדנדת "מחשבתית") + פעימת בס נמוכה,
-      // בסגנון מוזיקת ספירה-לאחור של משחקי טריוויה. לא טיק-טוק — לחן מתמשך שיוצר מתח.
-      const melody = [220.00, 261.63, 329.63, 261.63, 233.08, 277.18, 349.23, 277.18]; // לָה דוֹ מִי דוֹ · סִי♭ רֵ פָה רֵ
-      let step = 0;
-      const STEP_MS = 260;
-      suspenseTimer = setInterval(() => {
-        const i = step % melody.length;
-        beep(melody[i], 0.22, 0.055, 'triangle');            // קו הלחן המתוח
-        if(i % 2 === 0) beep(melody[i] / 2, 0.30, 0.05, 'sine'); // הרמוניה נמוכה מתחת
-        if(i === 0 || i === 4) beep(110, 0.16, 0.09, 'sine');    // פעימת בס — כמו דופק
-        step++;
-      }, STEP_MS);
+      if(!soundOn) return;
+      try{ suspenseAudio.currentTime = 0; suspenseAudio.play().catch(()=>{}); }catch(e){}
     }
-    function stopSuspense(){ if(suspenseTimer){ clearInterval(suspenseTimer); suspenseTimer=null; } }
+    function stopSuspense(){ try{ suspenseAudio.pause(); suspenseAudio.currentTime = 0; }catch(e){} }
     function fanfare(){
       if(!soundOn) return; ensureAudio();
       const notes=[392,523,659,784,1047]; // דו-מול-סול עולה — תרועה
