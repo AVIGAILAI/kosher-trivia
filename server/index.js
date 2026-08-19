@@ -110,10 +110,17 @@ function wireSession(session) {
     for (const p of session.playerList()) {
       io.to(`pv-${p.id}`).emit('player:state', session.playerView(p.id));
     }
-    if (session.classId) { broadcastClassBoard(); broadcastMaster(); } // עדכון לוח התחרות + פאנל המנהלת חי
+    if (session.classId) { broadcastClassBoard(); broadcastMaster(true); } // עדכון לוח התחרות + פאנל המנהלת (מיידי)
   };
 
   session.on('update', pushState);
+  // טיק טיימר (כל שנייה) — שידור קליל: רק המנחה + פאנל המנהלת (הספירה), בלי להעמיס
+  // את כל השחקנים/לוח-הכיתות כל שנייה. זה מפחית דרמטית עומס CPU בשרת החינמי בזמן שאלה.
+  session.on('tick', () => {
+    session.lastActive = Date.now();
+    io.to(`host-${pin}`).emit('host:state', session.hostState());
+    if (session.classId) broadcastMaster();
+  });
   session.on('question', (d) => io.to(`host-${pin}`).emit('host:event', { type: 'question', ...d }));
   session.on('reveal', (d) => io.to(`host-${pin}`).emit('host:event', { type: 'reveal', ...d }));
   session.on('gameover', (d) => {
@@ -193,7 +200,12 @@ function computeClassStandings() {
     .sort((a, b) => b.total - a.total);
 }
 
+function roomEmpty(name) {
+  const r = io.sockets.adapter.rooms.get(name);
+  return !r || r.size === 0;
+}
 function broadcastClassBoard() {
+  if (roomEmpty('classboard')) return; // אף אחד לא צופה בלוח → לא מבזבזים חישוב/שידור
   io.to('classboard').emit('classes:state', { standings: computeClassStandings(), at: Date.now() });
 }
 
@@ -223,8 +235,15 @@ function masterState() {
     };
   });
 }
-function broadcastMaster() {
-  io.to('master').emit('master:state', { rooms: masterState(), at: Date.now() });
+// טיקי-טיימר של כמה חדרים קוראים לזה כל שנייה; מקבצים ל-~1/שנייה ומדלגים אם אף אחד
+// לא צופה בפאנל — מונע עבודה כפולה (O(N²)) ושידורים מיותרים. force=true לפעולות מיידיות.
+let lastMasterAt = 0;
+function broadcastMaster(force = false) {
+  if (roomEmpty('master')) return; // אין מי שצופה בפאנל המנהלת
+  const now = Date.now();
+  if (!force && now - lastMasterAt < 800) return; // קיבוץ טיקים תכופים
+  lastMasterAt = now;
+  io.to('master').emit('master:state', { rooms: masterState(), at: now });
 }
 
 /**
@@ -400,7 +419,7 @@ io.on('connection', (socket) => {
     const quiz = quizStore.getQuiz(quizId);
     if (!quiz) return;
     for (const { s } of classSessions()) applyQuizToSession(s, quiz);
-    broadcastMaster();
+    broadcastMaster(true);
   });
   // פעולה על כל הכיתות יחד: start / next / skip / finish / restart
   socket.on('master:action', ({ action } = {}) => {
@@ -412,7 +431,7 @@ io.on('connection', (socket) => {
         s._saved = false;
       }
     }
-    broadcastMaster();
+    broadcastMaster(true);
     broadcastClassBoard();
   });
 

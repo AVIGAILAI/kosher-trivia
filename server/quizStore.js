@@ -22,6 +22,9 @@ const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || '';
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const REDIS_KEY = 'kosher-trivia:quizzes';
 const redisEnabled = () => !!(REDIS_URL && REDIS_TOKEN);
+// נכתב ל-Redis רק אחרי קריאה מוצלחת באתחול — הגנה מפני דריסת נתונים חיים אם Redis
+// לא נגיש רגעית בעלייה (אחרת נטען קובץ ריק ונדרוס את הרשימות/הניקוד ב-Redis).
+let redisReadOK = false;
 
 let db = { quizzes: [], roster: {}, classes: [], gameHistory: [], classResetAt: 0 };
 
@@ -161,7 +164,8 @@ function writeFileBackup() {
 /** שמירה: גיבוי מקומי + אחסון קבוע ב-Redis (אם מוגדר). */
 function save() {
   writeFileBackup();
-  if (redisEnabled()) {
+  // כותבים ל-Redis רק אם הקריאה באתחול הצליחה — כדי לא לדרוס נתונים חיים בזמן תקלת Redis
+  if (redisEnabled() && redisReadOK) {
     redisSet(db).catch((e) => console.error('שמירה ל-Redis נכשלה:', e.message));
   }
 }
@@ -169,24 +173,34 @@ function save() {
 /** אתחול — נקרא פעם אחת בעליית השרת (לפני שמתחילים להאזין). */
 export async function init() {
   if (redisEnabled()) {
-    try {
-      const remote = await redisGet();
-      if (remote && Array.isArray(remote.quizzes) && remote.quizzes.length) {
-        db = remote;
-        const changed = ensureDbShape(); // השלמת כיתות/היסטוריה למאגר קיים
-        if (changed) await redisSet(db);
-        console.log(`📚 מאגרי שאלות נטענו מ-Redis (${db.quizzes.length} מאגרים, ${db.classes.length} כיתות) — אחסון קבוע ✓`);
+    // עד 3 ניסיונות קריאה — תקלת Redis רגעית בעלייה לא צריכה להוביל לדריסת נתונים חיים
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const remote = await redisGet();
+        redisReadOK = true; // קריאה הצליחה → מותר לכתוב ל-Redis
+        if (remote && Array.isArray(remote.quizzes) && remote.quizzes.length) {
+          db = remote;
+          const changed = ensureDbShape();
+          if (changed) await redisSet(db);
+          console.log(`📚 מאגרי שאלות נטענו מ-Redis (${db.quizzes.length} מאגרים, ${db.classes.length} כיתות) — אחסון קבוע ✓`);
+        } else {
+          // Redis ריק — זריעה ראשונית מהקובץ ושמירה
+          db = loadFromFile();
+          ensureDbShape();
+          await redisSet(db);
+          console.log('📚 Redis היה ריק — נזרע מהקובץ ונשמר. אחסון קבוע ✓');
+        }
         return;
+      } catch (e) {
+        console.error(`חיבור ל-Redis נכשל (ניסיון ${attempt}/3):`, e.message);
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 500));
       }
-      // Redis ריק — זריעה ראשונית מהקובץ ושמירה ל-Redis
-      db = loadFromFile();
-      ensureDbShape();
-      await redisSet(db);
-      console.log('📚 Redis היה ריק — נזרע מהקובץ ונשמר. אחסון קבוע ✓');
-      return;
-    } catch (e) {
-      console.error('חיבור ל-Redis נכשל, משתמש בקובץ מקומי:', e.message);
     }
+    // כל הניסיונות נכשלו — עובדים מקובץ מקומי בלבד, בלי לכתוב ל-Redis (הגנה מפני דריסה)
+    db = loadFromFile();
+    ensureDbShape();
+    console.error('⚠️ Redis לא נגיש — עובדים מקומית בלבד, לא נכתוב ל-Redis כדי לא לדרוס נתונים חיים.');
+    return;
   }
   db = loadFromFile();
   ensureDbShape();
@@ -371,10 +385,19 @@ export function saveGame(rec = {}) {
     classTotal: Number(rec.classTotal) || 0,
     // פירוק ניקוד לפי כיתה (שם) — כך שגם משחק סלון אחד מזין את כל הכיתות שהשתתפו בו
     classBreakdown: (rec.classBreakdown && typeof rec.classBreakdown === 'object') ? rec.classBreakdown : null,
+    // מספר משתתפים נשמר בנפרד כדי שהיסטוריית המשחקים תציג אותו גם אחרי גיזום ה-data
+    playerCount: (rec.data && Array.isArray(rec.data.players)) ? rec.data.players.length : 0,
     data: rec.data || null,
   };
   db.gameHistory.push(record);
-  if (db.gameHistory.length > 200) db.gameHistory = db.gameHistory.slice(-200);
+  // גיזום נפח (מונע ניפוח blob ה-Redis שגרם להאטות/תקלות בשמירה):
+  // ה-data הכבד (exportData מלא, לייצוא חוזר) נשמר רק ל-20 המשחקים האחרונים; משחק ישן יותר
+  // מאבד רק את ה-data. הרשומה הקלה (סיכום + classBreakdown) נשמרת עד תקרה גבוהה, כך
+  // ש**הצבירה הכיתתית לא נעלמת** (accumulatedByClass סופר classBreakdown מאז האיפוס).
+  const KEEP_DATA = 20;
+  const cutoff = db.gameHistory.length - KEEP_DATA;
+  for (let i = 0; i < cutoff; i++) { if (db.gameHistory[i] && db.gameHistory[i].data) db.gameHistory[i].data = null; }
+  if (db.gameHistory.length > 500) db.gameHistory = db.gameHistory.slice(-500);
   save();
   return record;
 }
@@ -384,7 +407,8 @@ export function listGames() {
   return (db.gameHistory || []).slice().reverse().map((g) => ({
     id: g.id, classId: g.classId, className: g.className, quizName: g.quizName,
     playedAt: g.playedAt, classTotal: g.classTotal,
-    players: g.data && Array.isArray(g.data.players) ? g.data.players.length : 0,
+    players: (g.data && Array.isArray(g.data.players)) ? g.data.players.length : (g.playerCount || 0),
+    hasData: !!g.data, // האם ניתן עדיין לייצא את המשחק הזה לאקסל
   }));
 }
 

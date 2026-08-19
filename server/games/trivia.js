@@ -79,6 +79,12 @@ class TriviaGame {
     return true;
   }
 
+  /** זמן שנותר לשאלה — מחושב תמיד לפי שעון-קיר (deadline), לא לפי מונה שיורד. */
+  computeTimeLeft() {
+    if (!this.deadline) return 0;
+    return Math.max(0, Math.ceil((this.deadline - Date.now()) / 1000));
+  }
+
   loadQuestion(idx) {
     this.clearTimer();
     this.currentIdx = idx;
@@ -87,16 +93,23 @@ class TriviaGame {
     this.scored = false;
     const q = this.questions[idx];
     this.phase = 'question';
-    this.timeLeft = q.timeLimit || 20;
+    const limit = q.timeLimit || 20;
+    // שעון-קיר: הזמן שנותר נגזר מ-deadline מוחלט. כך הספירה תמיד בקצב אמת גם אם
+    // לולאת האירועים "נתקעת" לרגע, וגם אם יש טיימר כפול/שריד (כולם מחשבים אותו ערך).
+    this.deadline = Date.now() + limit * 1000;
+    this.timeLeft = limit;
 
     this.session.emit('question', { idx });
     this.session.emit('update');
 
-    this.timer = setInterval(() => {
-      this.timeLeft--;
-      this.session.emit('update');
+    // ללכוד את מזהה הטיימר מקומית → טיימר-שריד מנקה את עצמו כשהשלב כבר אינו 'question'
+    const timer = setInterval(() => {
+      if (this.phase !== 'question') { clearInterval(timer); if (this.timer === timer) this.timer = null; return; }
+      this.timeLeft = this.computeTimeLeft();
+      this.session.emit('tick'); // שידור קליל (מנחה בלבד) — לא מעמיס את כל השחקנים כל שנייה
       if (this.timeLeft <= 0) this.reveal();
     }, 1000);
+    this.timer = timer;
   }
 
   /** חישוב ניקוד לשאלה הנוכחית — נקרא גם ב-reveal וגם במעבר ישיר לשאלה הבאה/סיום (מונע אובדן ניקוד). */
@@ -232,7 +245,7 @@ class TriviaGame {
     const value = Number(input.value);
     if (!Number.isInteger(value) || value < 0 || value > 3) return;
     if (this.answers.has(player.id)) return; // כבר ענה
-    this.answers.set(player.id, { value, timeLeft: this.timeLeft });
+    this.answers.set(player.id, { value, timeLeft: this.computeTimeLeft() }); // זמן מדויק לבונוס מהירות
     this.session.emit('update');
   }
 
@@ -248,7 +261,7 @@ class TriviaGame {
       answersCount: this.answers.size,
       totalPlayers: this.session.players.size,
       answeredIds: [...this.answers.keys()], // מי ענה על השאלה הנוכחית
-      timeLeft: this.timeLeft,
+      timeLeft: this.phase === 'question' ? this.computeTimeLeft() : this.timeLeft,
       timeLimit: q ? q.timeLimit || 20 : 20,
     };
 
@@ -276,7 +289,7 @@ class TriviaGame {
       view.numOptions = q ? q.options.length : 4;
       view.hasAnswered = !!ans;
       view.myAnswer = ans ? ans.value : null;
-      view.timeLeft = this.timeLeft;
+      view.timeLeft = this.computeTimeLeft();
       if (q) {
         view.category = q.category;
         view.questionText = q.text;
@@ -346,6 +359,7 @@ class TriviaGame {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.deadline = 0; // מנקים את ה-deadline כדי שלא יישאר זמן "תקוע" משאלה קודמת
   }
 
   destroy() {
