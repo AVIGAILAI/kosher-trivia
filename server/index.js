@@ -16,7 +16,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '..', 'public');
 const PORT = process.env.PORT || 3000;
 // מספר הטלפון שאליו המשתתפים מחייגים (מוצג במסך המנחה). ניתן לשינוי דרך משתנה סביבה.
-const YEMOT_PHONE = process.env.YEMOT_PHONE || '0772253458';
+// מספר הטלפון לחיוג (מוצג במסך המנחה). מקובע בקוד כדי להתעלם ממשתנה סביבה ישן ב-Render.
+const YEMOT_PHONE = '0772253458';
 
 const app = express();
 const httpServer = createServer(app);
