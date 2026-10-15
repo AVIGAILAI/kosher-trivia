@@ -25,8 +25,19 @@ const redisEnabled = () => !!(REDIS_URL && REDIS_TOKEN);
 // נכתב ל-Redis רק אחרי קריאה מוצלחת באתחול — הגנה מפני דריסת נתונים חיים אם Redis
 // לא נגיש רגעית בעלייה (אחרת נטען קובץ ריק ונדרוס את הרשימות/הניקוד ב-Redis).
 let redisReadOK = false;
+// שינויים שנעשו בזמן ש-Redis לא היה נגיש (נשמרו רק בזיכרון) — ימוזגו ל-Redis כשיחזור
+const offline = { touchedQuizIds: new Set(), deletedQuizIds: new Set(), rosterTouched: false, games: [] };
+const reloadListeners = [];
 
 let db = { quizzes: [], roster: {}, classes: [], gameHistory: [], classResetAt: 0 };
+
+/** מצב האחסון: 'redis' = קבוע ✓ | 'offline' = Redis מוגדר אך לא נגיש (שמירה זמנית!) | 'file' = פיתוח מקומי */
+export function storageStatus() {
+  if (!redisEnabled()) return { mode: 'file' };
+  return { mode: redisReadOK ? 'redis' : 'offline' };
+}
+/** רישום פונקציה שתרוץ כשהנתונים נטענים מחדש מ-Redis (למשל ליצירת חדרי הכיתות בקודים הנכונים). */
+export function onReload(fn) { reloadListeners.push(fn); }
 
 function newId() {
   return 'q-' + randomUUID().slice(0, 8);
@@ -170,6 +181,60 @@ function save() {
   }
 }
 
+// --- פעימה + התחברות-מחדש ל-Redis ---
+// Upstash מוחקים בסיס חינמי אחרי 14 יום בלי פעילות (כך אבדו הנתונים ב-09/2026).
+// פעימה פעמיים ביום שומרת על הבסיס "פעיל" כל עוד השרת רץ.
+const HEARTBEAT_KEY = 'kosher-trivia:heartbeat';
+let heartbeatTimer = null;
+let reconnectTimer = null;
+
+function startHeartbeat() {
+  if (heartbeatTimer) return;
+  const beat = () =>
+    fetch(`${REDIS_URL}/set/${HEARTBEAT_KEY}/${Date.now()}`, { method: 'POST', headers: { Authorization: `Bearer ${REDIS_TOKEN}` } })
+      .then((r) => { if (!r.ok) throw new Error('status ' + r.status); })
+      .catch((e) => console.error('פעימת Redis נכשלה:', e.message));
+  beat();
+  heartbeatTimer = setInterval(beat, 12 * 60 * 60 * 1000);
+  if (heartbeatTimer.unref) heartbeatTimer.unref();
+}
+
+const isOffline = () => redisEnabled() && !redisReadOK;
+
+/** מיזוג שינויים שנעשו בזמן ניתוק לתוך הנתונים מ-Redis (לא מוחקים כלום — רק מוסיפים/מעדכנים מה שנגעו בו). */
+function mergeOffline(remote) {
+  const merged = remote;
+  const idx = new Map(merged.quizzes.map((q, i) => [q.id, i]));
+  for (const id of offline.touchedQuizIds) {
+    const q = db.quizzes.find((x) => x.id === id);
+    if (!q) continue;
+    if (idx.has(id)) merged.quizzes[idx.get(id)] = q; else merged.quizzes.push(q);
+  }
+  if (offline.rosterTouched) merged.roster = { ...(merged.roster || {}), ...(db.roster || {}) };
+  if (offline.games.length) merged.gameHistory = [...(merged.gameHistory || []), ...offline.games];
+  return merged;
+}
+
+/** כש-Redis לא נגיש באתחול — מנסים שוב כל דקה; כשחוזר, טוענים/ממזגים ושומרים לצמיתות. */
+function startReconnectLoop() {
+  if (reconnectTimer) return;
+  reconnectTimer = setInterval(async () => {
+    let remote;
+    try { remote = await redisGet(); } catch { return; } // עדיין לא נגיש
+    clearInterval(reconnectTimer);
+    reconnectTimer = null;
+    if (remote && Array.isArray(remote.quizzes) && remote.quizzes.length) db = mergeOffline(remote);
+    // אחרת Redis ריק — שומרים את מה שבזיכרון (כולל מה שהועלה בזמן הניתוק)
+    ensureDbShape();
+    redisReadOK = true;
+    try { await redisSet(db); } catch (e) { console.error('שמירה אחרי חיבור-מחדש נכשלה:', e.message); }
+    offline.touchedQuizIds.clear(); offline.rosterTouched = false; offline.games = [];
+    console.log(`✅ Redis חזר — ${db.quizzes.length} מאגרים נטענו/מוזגו ונשמרו לצמיתות`);
+    startHeartbeat();
+    for (const fn of reloadListeners) { try { fn(); } catch (e) { console.error(e.message); } }
+  }, 60 * 1000);
+}
+
 /** אתחול — נקרא פעם אחת בעליית השרת (לפני שמתחילים להאזין). */
 export async function init() {
   if (redisEnabled()) {
@@ -190,6 +255,7 @@ export async function init() {
           await redisSet(db);
           console.log('📚 Redis היה ריק — נזרע מהקובץ ונשמר. אחסון קבוע ✓');
         }
+        startHeartbeat();
         return;
       } catch (e) {
         console.error(`חיבור ל-Redis נכשל (ניסיון ${attempt}/3):`, e.message);
@@ -199,7 +265,8 @@ export async function init() {
     // כל הניסיונות נכשלו — עובדים מקובץ מקומי בלבד, בלי לכתוב ל-Redis (הגנה מפני דריסה)
     db = loadFromFile();
     ensureDbShape();
-    console.error('⚠️ Redis לא נגיש — עובדים מקומית בלבד, לא נכתוב ל-Redis כדי לא לדרוס נתונים חיים.');
+    console.error('⚠️ Redis לא נגיש — עובדים מקומית בלבד, לא נכתוב ל-Redis כדי לא לדרוס נתונים חיים. ננסה להתחבר שוב כל דקה.');
+    startReconnectLoop();
     return;
   }
   db = loadFromFile();
@@ -225,6 +292,7 @@ export function firstQuiz() {
 export function createQuiz(name) {
   const quiz = { id: newId(), name: String(name || 'מאגר חדש').slice(0, 60), questions: [] };
   db.quizzes.push(quiz);
+  if (isOffline()) offline.touchedQuizIds.add(quiz.id);
   save();
   return quiz;
 }
@@ -234,6 +302,7 @@ export function updateQuiz(id, { name, questions } = {}) {
   if (!quiz) return null;
   if (typeof name === 'string') quiz.name = name.slice(0, 60);
   if (Array.isArray(questions)) quiz.questions = questions.map(sanitizeQuestion);
+  if (isOffline()) offline.touchedQuizIds.add(quiz.id);
   save();
   return quiz;
 }
@@ -294,6 +363,7 @@ export function setRoster(entries) {
     }
   }
   db.roster = roster;
+  if (isOffline()) offline.rosterTouched = true;
   save();
   return listRoster();
 }
@@ -390,6 +460,7 @@ export function saveGame(rec = {}) {
     data: rec.data || null,
   };
   db.gameHistory.push(record);
+  if (isOffline()) offline.games.push(record);
   // גיזום נפח (מונע ניפוח blob ה-Redis שגרם להאטות/תקלות בשמירה):
   // ה-data הכבד (exportData מלא, לייצוא חוזר) נשמר רק ל-20 המשחקים האחרונים; משחק ישן יותר
   // מאבד רק את ה-data. הרשומה הקלה (סיכום + classBreakdown) נשמרת עד תקרה גבוהה, כך

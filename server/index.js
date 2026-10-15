@@ -45,6 +45,9 @@ app.use('/voice', createTwilioRouter(gameManager));
 app.use(express.urlencoded({ extended: true })); // תמיכה גם ב-POST של ימות
 app.use('/yemot', createYemotRouter(gameManager));
 
+// מצב האחסון — העורך ומסך המנחה מציגים אזהרה אדומה אם השמירה זמנית בלבד (Redis לא נגיש)
+app.get('/api/storage-status', (_req, res) => res.json(quizStore.storageStatus()));
+
 // --- REST API לניהול מאגרי שאלות ---
 app.get('/api/quizzes', (_req, res) => res.json(quizStore.listQuizzes()));
 app.get('/api/quizzes/:id', (req, res) => {
@@ -480,6 +483,12 @@ await quizStore.init();
 
 // יצירת חדר קבוע (קוד יציב) לכל כיתה — כדי שהתלמידות יוכלו לחייג בכל רגע.
 for (const cls of quizStore.listClasses()) ensureClassSession(cls);
+// אם Redis חזר אחרי ניתוק — הקודים הקבועים נטענו מחדש; יוצרים חדרים בקודים הנכונים
+quizStore.onReload(() => {
+  for (const cls of quizStore.listClasses()) ensureClassSession(cls);
+  broadcastClassBoard();
+  broadcastMaster(true);
+});
 
 httpServer.listen(PORT, () => {
   console.log(`\n🎯 שרת הטריוויה רץ על http://localhost:${PORT}`);
