@@ -23,14 +23,15 @@
     @keyframes winnerPop { 0%{ transform:scale(.3); opacity:0; } 100%{ transform:scale(1); opacity:1; } }
     .pin-badge { background:#fff; color:#5a2c7d; }
   </style>
+  <script src="/theme.js"></script>
 </head>
 <body class="text-slate-800 p-4 md:p-8">
   <div class="max-w-5xl mx-auto">
     <header class="flex items-center justify-between gap-3 mb-6 text-white">
       <div class="flex items-center gap-4">
-        <img src="/media/logo-white.png" alt="בנות לאה" class="h-32 w-32 md:h-44 md:w-44 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
+        <img data-logo src="/api/logo" alt="בנות לאה" class="h-32 w-32 md:h-44 md:w-44 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
         <div>
-          <h1 class="text-3xl font-black drop-shadow">טריוויה — בנות לאה</h1>
+          <h1 class="text-3xl font-black drop-shadow">טריוויה — <span data-school-name>בנות לאה</span></h1>
           <p class="text-sm text-purple-100 font-semibold">מסך מנחה — להקרנה</p>
           <p id="classBadge" class="hidden mt-1 inline-block bg-white/25 text-white font-black px-3 py-1 rounded-full text-lg"></p>
         </div>
@@ -262,7 +263,7 @@
         if(res.className){
           const b = document.getElementById('classBadge');
           b.innerText = '🏫 ' + res.className; b.classList.remove('hidden');
-          document.title = res.className + ' — טריוויה בנות לאה';
+          document.title = res.className + ' — טריוויה ' + TriviaTheme.schoolName();
         }
         document.getElementById('pin').innerText = pin;
         document.getElementById('topPin').innerText = pin;

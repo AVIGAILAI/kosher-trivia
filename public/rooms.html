@@ -10,12 +10,13 @@
     body { font-family:'Rubik',sans-serif; background:linear-gradient(135deg,#7e3f9d 0%,#5a2c7d 50%,#391c55 100%); min-height:100vh; }
     .glass { background:rgba(255,255,255,.95); box-shadow:0 20px 40px rgba(0,0,0,.15); }
   </style>
+  <script src="/theme.js"></script>
 </head>
 <body class="p-4 md:p-8 text-white">
   <div class="max-w-5xl mx-auto">
     <header class="flex items-center justify-between gap-3 mb-6">
       <div class="flex items-center gap-4">
-        <img src="/media/logo-white.png" alt="בנות לאה" class="h-20 w-20 md:h-24 md:w-24 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
+        <img data-logo src="/api/logo" alt="בנות לאה" class="h-20 w-20 md:h-24 md:w-24 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
         <div>
           <h1 class="text-3xl font-black drop-shadow">חדרי הכיתות</h1>
           <p class="text-sm text-purple-100 font-semibold">בחרי חדר לפתיחת מסך מנחה — או פתחי את לוח התחרות</p>
@@ -23,6 +24,7 @@
       </div>
       <div class="flex items-center gap-2">
         <a href="/principal" class="bg-white text-purple-800 font-black px-4 py-2 rounded-xl text-sm shadow">🎛️ פאנל מנהלת</a>
+        <button data-theme-open class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">🎨 עיצוב</button>
         <a href="/classes" class="bg-amber-400 hover:bg-amber-300 text-purple-900 font-black px-4 py-2 rounded-xl text-sm shadow">🏆 לוח התחרות</a>
         <a href="/editor" class="bg-white/20 hover:bg-white/30 text-white font-bold px-4 py-2 rounded-xl text-sm">✏️ עורך</a>
       </div>

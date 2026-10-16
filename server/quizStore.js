@@ -21,12 +21,17 @@ const LEGACY_PATH = join(DATA_DIR, 'questions.json');
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || '';
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const REDIS_KEY = 'kosher-trivia:quizzes';
+// הלוגו המותאם נשמר במפתח נפרד (כבד יחסית) — כדי לא לשלוח אותו בכל שמירה של המאגרים
+const LOGO_KEY = 'kosher-trivia:logo';
+const LOGO_PATH = join(DATA_DIR, 'custom-logo.txt');
+const DEFAULT_THEME = { palette: 'purple', schoolName: 'בנות לאה', logoVersion: 0 };
+let customLogo = null; // data URL של לוגו שהועלה (null = הלוגו המקורי)
 const redisEnabled = () => !!(REDIS_URL && REDIS_TOKEN);
 // נכתב ל-Redis רק אחרי קריאה מוצלחת באתחול — הגנה מפני דריסת נתונים חיים אם Redis
 // לא נגיש רגעית בעלייה (אחרת נטען קובץ ריק ונדרוס את הרשימות/הניקוד ב-Redis).
 let redisReadOK = false;
 // שינויים שנעשו בזמן ש-Redis לא היה נגיש (נשמרו רק בזיכרון) — ימוזגו ל-Redis כשיחזור
-const offline = { touchedQuizIds: new Set(), deletedQuizIds: new Set(), rosterTouched: false, games: [] };
+const offline = { touchedQuizIds: new Set(), deletedQuizIds: new Set(), rosterTouched: false, themeTouched: false, logoTouched: false, games: [] };
 const reloadListeners = [];
 
 let db = { quizzes: [], roster: {}, classes: [], gameHistory: [], classResetAt: 0 };
@@ -72,6 +77,7 @@ function ensureDbShape() {
   if (!db.roster || typeof db.roster !== 'object') { db.roster = {}; changed = true; }
   if (!Array.isArray(db.gameHistory)) { db.gameHistory = []; changed = true; }
   if (typeof db.classResetAt !== 'number') { db.classResetAt = 0; changed = true; }
+  if (!db.theme || typeof db.theme !== 'object') { db.theme = { ...DEFAULT_THEME }; changed = true; }
   if (!Array.isArray(db.classes) || db.classes.length === 0) { db.classes = defaultClasses(); changed = true; }
   // מיגרציה חד-פעמית ל-8 הכיתות האמיתיות (שומרת את הסלון הקיים + הקוד שלו).
   if (db.classSchema !== CLASS_SCHEMA) {
@@ -129,8 +135,8 @@ function sanitizeQuestion(q) {
 }
 
 // --- Upstash Redis (REST) ---
-async function redisGet() {
-  const r = await fetch(`${REDIS_URL}/get/${REDIS_KEY}`, {
+async function redisGet(key = REDIS_KEY) {
+  const r = await fetch(`${REDIS_URL}/get/${key}`, {
     headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
   });
   if (!r.ok) throw new Error('redis get ' + r.status);
@@ -138,8 +144,8 @@ async function redisGet() {
   return data.result ? JSON.parse(data.result) : null;
 }
 
-async function redisSet(value) {
-  const r = await fetch(`${REDIS_URL}/set/${REDIS_KEY}`, {
+async function redisSet(value, key = REDIS_KEY) {
+  const r = await fetch(`${REDIS_URL}/set/${key}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${REDIS_TOKEN}` },
     body: JSON.stringify(value),
@@ -212,6 +218,7 @@ function mergeOffline(remote) {
   }
   if (offline.rosterTouched) merged.roster = { ...(merged.roster || {}), ...(db.roster || {}) };
   if (offline.games.length) merged.gameHistory = [...(merged.gameHistory || []), ...offline.games];
+  if (offline.themeTouched || offline.logoTouched) merged.theme = db.theme;
   return merged;
 }
 
@@ -228,7 +235,12 @@ function startReconnectLoop() {
     ensureDbShape();
     redisReadOK = true;
     try { await redisSet(db); } catch (e) { console.error('שמירה אחרי חיבור-מחדש נכשלה:', e.message); }
-    offline.touchedQuizIds.clear(); offline.rosterTouched = false; offline.games = [];
+    if (offline.logoTouched) {
+      try { await redisSet(customLogo, LOGO_KEY); } catch (e) { console.error('שמירת לוגו אחרי חיבור-מחדש נכשלה:', e.message); }
+    } else {
+      await loadLogo();
+    }
+    offline.touchedQuizIds.clear(); offline.rosterTouched = false; offline.themeTouched = false; offline.logoTouched = false; offline.games = [];
     console.log(`✅ Redis חזר — ${db.quizzes.length} מאגרים נטענו/מוזגו ונשמרו לצמיתות`);
     startHeartbeat();
     for (const fn of reloadListeners) { try { fn(); } catch (e) { console.error(e.message); } }
@@ -255,6 +267,7 @@ export async function init() {
           await redisSet(db);
           console.log('📚 Redis היה ריק — נזרע מהקובץ ונשמר. אחסון קבוע ✓');
         }
+        await loadLogo();
         startHeartbeat();
         return;
       } catch (e) {
@@ -265,6 +278,7 @@ export async function init() {
     // כל הניסיונות נכשלו — עובדים מקובץ מקומי בלבד, בלי לכתוב ל-Redis (הגנה מפני דריסה)
     db = loadFromFile();
     ensureDbShape();
+    await loadLogo();
     console.error('⚠️ Redis לא נגיש — עובדים מקומית בלבד, לא נכתוב ל-Redis כדי לא לדרוס נתונים חיים. ננסה להתחבר שוב כל דקה.');
     startReconnectLoop();
     return;
@@ -272,7 +286,58 @@ export async function init() {
   db = loadFromFile();
   ensureDbShape();
   writeFileBackup();
+  await loadLogo();
   console.log('📚 מאגרי שאלות נטענו מקובץ מקומי (אחסון זמני — הגדירי Redis לאחסון קבוע)');
+}
+
+// --- עיצוב: צבע רקע + לוגו + שם בית הספר (משותף לכל המסכים) ---
+
+/** טעינת הלוגו המותאם: מ-Redis כשמחובר, אחרת מהגיבוי המקומי. */
+async function loadLogo() {
+  if (redisEnabled() && redisReadOK) {
+    try { customLogo = (await redisGet(LOGO_KEY)) || null; return; }
+    catch (e) { console.error('טעינת לוגו מ-Redis נכשלה:', e.message); }
+  }
+  try { customLogo = existsSync(LOGO_PATH) ? (readFileSync(LOGO_PATH, 'utf8').trim() || null) : null; }
+  catch { customLogo = null; }
+}
+
+export function getTheme() {
+  return { ...DEFAULT_THEME, ...(db.theme || {}), hasLogo: !!customLogo };
+}
+
+export function setTheme({ palette, schoolName } = {}) {
+  const t = { ...DEFAULT_THEME, ...(db.theme || {}) };
+  if (typeof palette === 'string' && /^[a-z0-9-]{1,24}$/.test(palette)) t.palette = palette;
+  if (typeof schoolName === 'string') t.schoolName = schoolName.trim().slice(0, 60) || DEFAULT_THEME.schoolName;
+  db.theme = t;
+  if (isOffline()) offline.themeTouched = true;
+  save();
+  return getTheme();
+}
+
+/** הלוגו המותאם כ-{ mime, buffer }, או null אם משתמשים בלוגו המקורי. */
+export function getLogo() {
+  const m = /^data:(image\/(?:png|webp|jpeg|gif));base64,(.+)$/.exec(customLogo || '');
+  return m ? { mime: m[1], buffer: Buffer.from(m[2], 'base64') } : null;
+}
+
+/** החלפת לוגו (data URL של תמונה), או null לחזרה ללוגו המקורי. */
+export function setLogo(dataUrl) {
+  if (dataUrl != null) {
+    if (typeof dataUrl !== 'string' || !/^data:image\/(png|webp|jpeg|gif);base64,/.test(dataUrl)) throw new Error('קובץ תמונה לא תקין');
+    if (dataUrl.length > 900000) throw new Error('התמונה גדולה מדי');
+  }
+  customLogo = dataUrl || null;
+  db.theme = { ...DEFAULT_THEME, ...(db.theme || {}), logoVersion: Date.now() };
+  try { writeFileSync(LOGO_PATH, customLogo || '', 'utf8'); } catch (e) { console.warn('גיבוי לוגו מקומי נכשל:', e.message); }
+  if (redisEnabled() && redisReadOK) {
+    redisSet(customLogo, LOGO_KEY).catch((e) => console.error('שמירת לוגו ל-Redis נכשלה:', e.message));
+  } else if (isOffline()) {
+    offline.logoTouched = true;
+  }
+  save();
+  return getTheme();
 }
 
 // --- API ציבורי ---

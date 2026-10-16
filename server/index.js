@@ -28,7 +28,7 @@ const telephonyProvider = new SimulatedProvider(io);
 const telephony = new TelephonyGateway(telephonyProvider, gameManager);
 
 // --- הגשת קבצים סטטיים ודפים ---
-app.use(express.json());
+app.use(express.json({ limit: '1mb' })); // 1mb — כדי לאפשר העלאת לוגו
 app.use(express.static(PUBLIC_DIR));
 app.get('/', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'host.html')));
 app.get('/controller', (_req, res) => res.sendFile(join(PUBLIC_DIR, 'controller.html')));
@@ -47,6 +47,21 @@ app.use('/yemot', createYemotRouter(gameManager));
 
 // מצב האחסון — העורך ומסך המנחה מציגים אזהרה אדומה אם השמירה זמנית בלבד (Redis לא נגיש)
 app.get('/api/storage-status', (_req, res) => res.json(quizStore.storageStatus()));
+
+// --- עיצוב משותף לכל המסכים: צבע רקע, לוגו, שם בית הספר ---
+app.get('/api/theme', (_req, res) => res.json(quizStore.getTheme()));
+app.post('/api/theme', (req, res) => res.json(quizStore.setTheme(req.body || {})));
+app.post('/api/theme/logo', (req, res) => {
+  try { res.json(quizStore.setLogo(req.body?.dataUrl ?? null)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+// הלוגו הנוכחי — המותאם אם הועלה, אחרת הלוגו המקורי של בנות לאה
+app.get('/api/logo', (_req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  const logo = quizStore.getLogo();
+  if (!logo) return res.sendFile(join(PUBLIC_DIR, 'media', 'logo-white.png'));
+  res.type(logo.mime).send(logo.buffer);
+});
 
 // --- REST API לניהול מאגרי שאלות ---
 app.get('/api/quizzes', (_req, res) => res.json(quizStore.listQuizzes()));

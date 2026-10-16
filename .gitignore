@@ -14,3 +14,6 @@ twilio_2FA_recovery_code.txt
 
 # קובץ מקור מנגינת מתח (כבד) — משתמשים ב-public/media/suspense.mp3
 Quiz Show Tension.mp3
+
+# לוגו מותאם שהועלה (גיבוי מקומי; המקור ב-Redis)
+data/custom-logo.txt

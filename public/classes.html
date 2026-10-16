@@ -12,12 +12,13 @@
     .bar { transition:width .8s cubic-bezier(.22,1,.36,1); }
     .row { transition:transform .6s cubic-bezier(.22,1,.36,1); }
   </style>
+  <script src="/theme.js"></script>
 </head>
 <body class="p-4 md:p-8 text-white">
   <div class="max-w-4xl mx-auto">
     <header class="flex items-center justify-between gap-3 mb-8">
       <div class="flex items-center gap-4">
-        <img src="/media/logo-white.png" alt="בנות לאה" class="h-20 w-20 md:h-28 md:w-28 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
+        <img data-logo src="/api/logo" alt="בנות לאה" class="h-20 w-20 md:h-28 md:w-28 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]" />
         <div>
           <h1 class="text-4xl font-black drop-shadow">🏆 תחרות הכיתות</h1>
           <p class="text-sm text-purple-100 font-semibold">נקודות נצברות בין כל הכיתות</p>
