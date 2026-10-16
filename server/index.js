@@ -335,9 +335,13 @@ io.on('connection', (socket) => {
       }
       return;
     }
-    // אחרת — יצירת משחק חדש
+    // אחרת — יצירת משחק חדש. אם המנחה כבר היה לו קוד (והשרת אותחל בינתיים) — משחזרים את אותו קוד,
+    // כדי שהקוד שעל המסך/שנמסר למחייגות לא ישתנה. לא לוקחים קוד של כיתה.
+    const classCodes = new Set(quizStore.listClasses().map((c) => String(c.code)));
+    const keepPin = hostToken && /^\d{4}$/.test(String(pin || '')) && !classCodes.has(String(pin)) ? String(pin) : undefined;
     const quiz = quizStore.getQuiz(quizId) || quizStore.firstQuiz();
     const session = gameManager.createSession(gameType, {
+      pin: keepPin,
       questions: quiz ? quiz.questions : [],
       quizId: quiz ? quiz.id : null,
       quizName: quiz ? quiz.name : '',

@@ -245,7 +245,10 @@
 
     // מזהה יציב למנחה — נשמר בדפדפן, כדי לחזור לאותו משחק אחרי רענון/נפילת רשת
     // חדר כיתה (מתוך ?class=) — כל כיתה עם מפתחות localStorage משלה, כדי שכל חדר יתחבר-מחדש עצמאית
-    const CLASS_ID = new URLSearchParams(location.search).get('class') || null;
+    // בלי ?class= — המסך הראשי נפתח תמיד בסלון (קוד קבוע שלא משתנה גם אחרי עדכון/אתחול של השרת).
+    // משחק נפרד בקוד משלו: ‎/?private=1
+    const _qs = new URLSearchParams(location.search);
+    const CLASS_ID = _qs.get('class') || (_qs.has('private') ? null : 'salon');
     const TOKEN_KEY = CLASS_ID ? 'triviaHostToken:' + CLASS_ID : 'triviaHostToken';
     const PIN_KEY = CLASS_ID ? 'triviaHostPin:' + CLASS_ID : 'triviaHostPin';
     const HOST_TOKEN = (() => {
