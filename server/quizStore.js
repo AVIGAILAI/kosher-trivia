@@ -21,17 +21,20 @@ const LEGACY_PATH = join(DATA_DIR, 'questions.json');
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || '';
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const REDIS_KEY = 'kosher-trivia:quizzes';
-// הלוגו המותאם נשמר במפתח נפרד (כבד יחסית) — כדי לא לשלוח אותו בכל שמירה של המאגרים
-const LOGO_KEY = 'kosher-trivia:logo';
-const LOGO_PATH = join(DATA_DIR, 'custom-logo.txt');
-const DEFAULT_THEME = { palette: 'purple', schoolName: 'בנות לאה', logoVersion: 0 };
-let customLogo = null; // data URL של לוגו שהועלה (null = הלוגו המקורי)
+// תמונות מותאמות (לוגו, תמונת רקע) נשמרות כל אחת במפתח נפרד (כבדות יחסית) — כדי לא לשלוח
+// אותן בכל שמירה של המאגרים. ערך: data URL, או null = ברירת המחדל.
+const ASSETS = {
+  logo: { key: 'kosher-trivia:logo', path: join(DATA_DIR, 'custom-logo.txt'), version: 'logoVersion' },
+  bg:   { key: 'kosher-trivia:bg',   path: join(DATA_DIR, 'custom-bg.txt'),   version: 'bgVersion' },
+};
+const DEFAULT_THEME = { palette: 'purple', schoolName: 'בנות לאה', logoVersion: 0, bgVersion: 0, bgDim: true };
+const assetData = { logo: null, bg: null };
 const redisEnabled = () => !!(REDIS_URL && REDIS_TOKEN);
 // נכתב ל-Redis רק אחרי קריאה מוצלחת באתחול — הגנה מפני דריסת נתונים חיים אם Redis
 // לא נגיש רגעית בעלייה (אחרת נטען קובץ ריק ונדרוס את הרשימות/הניקוד ב-Redis).
 let redisReadOK = false;
 // שינויים שנעשו בזמן ש-Redis לא היה נגיש (נשמרו רק בזיכרון) — ימוזגו ל-Redis כשיחזור
-const offline = { touchedQuizIds: new Set(), deletedQuizIds: new Set(), rosterTouched: false, themeTouched: false, logoTouched: false, games: [] };
+const offline = { touchedQuizIds: new Set(), deletedQuizIds: new Set(), rosterTouched: false, themeTouched: false, assetsTouched: new Set(), games: [] };
 const reloadListeners = [];
 
 let db = { quizzes: [], roster: {}, classes: [], gameHistory: [], classResetAt: 0 };
@@ -229,7 +232,7 @@ function mergeOffline(remote) {
   }
   if (offline.rosterTouched) merged.roster = { ...(merged.roster || {}), ...(db.roster || {}) };
   if (offline.games.length) merged.gameHistory = [...(merged.gameHistory || []), ...offline.games];
-  if (offline.themeTouched || offline.logoTouched) merged.theme = db.theme;
+  if (offline.themeTouched || offline.assetsTouched.size) merged.theme = db.theme;
   return merged;
 }
 
@@ -246,12 +249,14 @@ function startReconnectLoop() {
     ensureDbShape();
     redisReadOK = true;
     try { await redisSet(db); } catch (e) { console.error('שמירה אחרי חיבור-מחדש נכשלה:', e.message); }
-    if (offline.logoTouched) {
-      try { await redisSet(customLogo, LOGO_KEY); } catch (e) { console.error('שמירת לוגו אחרי חיבור-מחדש נכשלה:', e.message); }
-    } else {
-      await loadLogo();
+    for (const name of Object.keys(ASSETS)) {
+      if (offline.assetsTouched.has(name)) {
+        try { await redisSet(assetData[name], ASSETS[name].key); } catch (e) { console.error(`שמירת ${name} אחרי חיבור-מחדש נכשלה:`, e.message); }
+      } else {
+        await loadAsset(name);
+      }
     }
-    offline.touchedQuizIds.clear(); offline.rosterTouched = false; offline.themeTouched = false; offline.logoTouched = false; offline.games = [];
+    offline.touchedQuizIds.clear(); offline.rosterTouched = false; offline.themeTouched = false; offline.assetsTouched.clear(); offline.games = [];
     console.log(`✅ Redis חזר — ${db.quizzes.length} מאגרים נטענו/מוזגו ונשמרו לצמיתות`);
     startHeartbeat();
     for (const fn of reloadListeners) { try { fn(); } catch (e) { console.error(e.message); } }
@@ -278,7 +283,7 @@ export async function init() {
           await redisSet(db);
           console.log('📚 Redis היה ריק — נזרע מהקובץ ונשמר. אחסון קבוע ✓');
         }
-        await loadLogo();
+        await loadAssets();
         startHeartbeat();
         return;
       } catch (e) {
@@ -289,7 +294,7 @@ export async function init() {
     // כל הניסיונות נכשלו — עובדים מקובץ מקומי בלבד, בלי לכתוב ל-Redis (הגנה מפני דריסה)
     db = loadFromFile();
     ensureDbShape();
-    await loadLogo();
+    await loadAssets();
     console.error('⚠️ Redis לא נגיש — עובדים מקומית בלבד, לא נכתוב ל-Redis כדי לא לדרוס נתונים חיים. ננסה להתחבר שוב כל דקה.');
     startReconnectLoop();
     return;
@@ -297,55 +302,69 @@ export async function init() {
   db = loadFromFile();
   ensureDbShape();
   writeFileBackup();
-  await loadLogo();
+  await loadAssets();
   console.log('📚 מאגרי שאלות נטענו מקובץ מקומי (אחסון זמני — הגדירי Redis לאחסון קבוע)');
 }
 
 // --- עיצוב: צבע רקע + לוגו + שם בית הספר (משותף לכל המסכים) ---
 
-/** טעינת הלוגו המותאם: מ-Redis כשמחובר, אחרת מהגיבוי המקומי. */
-async function loadLogo() {
+/** טעינת תמונה מותאמת: מ-Redis כשמחובר, אחרת מהגיבוי המקומי. */
+async function loadAsset(name) {
+  const a = ASSETS[name];
   if (redisEnabled() && redisReadOK) {
-    try { customLogo = (await redisGet(LOGO_KEY)) || null; return; }
-    catch (e) { console.error('טעינת לוגו מ-Redis נכשלה:', e.message); }
+    try { assetData[name] = (await redisGet(a.key)) || null; return; }
+    catch (e) { console.error(`טעינת ${name} מ-Redis נכשלה:`, e.message); }
   }
-  try { customLogo = existsSync(LOGO_PATH) ? (readFileSync(LOGO_PATH, 'utf8').trim() || null) : null; }
-  catch { customLogo = null; }
+  try { assetData[name] = existsSync(a.path) ? (readFileSync(a.path, 'utf8').trim() || null) : null; }
+  catch { assetData[name] = null; }
 }
+async function loadAssets() { for (const name of Object.keys(ASSETS)) await loadAsset(name); }
 
 export function getTheme() {
-  return { ...DEFAULT_THEME, ...(db.theme || {}), hasLogo: !!customLogo };
+  return { ...DEFAULT_THEME, ...(db.theme || {}), hasLogo: !!assetData.logo, hasBg: !!assetData.bg };
 }
 
-export function setTheme({ palette, schoolName } = {}) {
+export function setTheme({ palette, schoolName, bgDim } = {}) {
   const t = { ...DEFAULT_THEME, ...(db.theme || {}) };
-  if (typeof palette === 'string' && /^[a-z0-9-]{1,24}$/.test(palette)) t.palette = palette;
+  if (typeof palette === 'string' && /^[a-z0-9-]{1,24}$/.test(palette)) {
+    t.palette = palette;
+    if (palette !== 'image') t.prevPalette = palette; // הצבע שחוזרים אליו כשמסירים את תמונת הרקע
+  }
   if (typeof schoolName === 'string') t.schoolName = schoolName.trim().slice(0, 60) || DEFAULT_THEME.schoolName;
+  if (typeof bgDim === 'boolean') t.bgDim = bgDim;
   db.theme = t;
   if (isOffline()) offline.themeTouched = true;
   save();
   return getTheme();
 }
 
-/** הלוגו המותאם כ-{ mime, buffer }, או null אם משתמשים בלוגו המקורי. */
-export function getLogo() {
-  const m = /^data:(image\/(?:png|webp|jpeg|gif));base64,(.+)$/.exec(customLogo || '');
+/** תמונה מותאמת ('logo' | 'bg') כ-{ mime, buffer }, או null אם משתמשים בברירת המחדל. */
+export function getAsset(name) {
+  const m = /^data:(image\/(?:png|webp|jpeg|gif));base64,(.+)$/.exec(assetData[name] || '');
   return m ? { mime: m[1], buffer: Buffer.from(m[2], 'base64') } : null;
 }
 
-/** החלפת לוגו (data URL של תמונה), או null לחזרה ללוגו המקורי. */
-export function setLogo(dataUrl) {
+/** החלפת תמונה מותאמת (data URL), או null לחזרה לברירת המחדל. */
+export function setAsset(name, dataUrl) {
+  const a = ASSETS[name];
+  if (!a) throw new Error('סוג תמונה לא מוכר');
   if (dataUrl != null) {
     if (typeof dataUrl !== 'string' || !/^data:image\/(png|webp|jpeg|gif);base64,/.test(dataUrl)) throw new Error('קובץ תמונה לא תקין');
     if (dataUrl.length > 900000) throw new Error('התמונה גדולה מדי');
   }
-  customLogo = dataUrl || null;
-  db.theme = { ...DEFAULT_THEME, ...(db.theme || {}), logoVersion: Date.now() };
-  try { writeFileSync(LOGO_PATH, customLogo || '', 'utf8'); } catch (e) { console.warn('גיבוי לוגו מקומי נכשל:', e.message); }
+  assetData[name] = dataUrl || null;
+  const t = { ...DEFAULT_THEME, ...(db.theme || {}), [a.version]: Date.now() };
+  if (name === 'bg') {
+    // העלאת תמונת רקע → מציגים אותה; הסרה → חזרה לצבע הקודם
+    if (dataUrl) { if (t.palette !== 'image') t.prevPalette = t.palette; t.palette = 'image'; }
+    else if (t.palette === 'image') t.palette = t.prevPalette || DEFAULT_THEME.palette;
+  }
+  db.theme = t;
+  try { writeFileSync(a.path, assetData[name] || '', 'utf8'); } catch (e) { console.warn(`גיבוי מקומי של ${name} נכשל:`, e.message); }
   if (redisEnabled() && redisReadOK) {
-    redisSet(customLogo, LOGO_KEY).catch((e) => console.error('שמירת לוגו ל-Redis נכשלה:', e.message));
+    redisSet(assetData[name], a.key).catch((e) => console.error(`שמירת ${name} ל-Redis נכשלה:`, e.message));
   } else if (isOffline()) {
-    offline.logoTouched = true;
+    offline.assetsTouched.add(name);
   }
   save();
   return getTheme();

@@ -51,16 +51,24 @@ app.get('/api/storage-status', (_req, res) => res.json(quizStore.storageStatus()
 // --- עיצוב משותף לכל המסכים: צבע רקע, לוגו, שם בית הספר ---
 app.get('/api/theme', (_req, res) => res.json(quizStore.getTheme()));
 app.post('/api/theme', (req, res) => res.json(quizStore.setTheme(req.body || {})));
-app.post('/api/theme/logo', (req, res) => {
-  try { res.json(quizStore.setLogo(req.body?.dataUrl ?? null)); }
+// העלאת לוגו / תמונת רקע ({dataUrl}, או null לחזרה לברירת המחדל)
+app.post('/api/theme/:asset(logo|bg)', (req, res) => {
+  try { res.json(quizStore.setAsset(req.params.asset, req.body?.dataUrl ?? null)); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 // הלוגו הנוכחי — המותאם אם הועלה, אחרת הלוגו המקורי של בנות לאה
 app.get('/api/logo', (_req, res) => {
   res.set('Cache-Control', 'no-cache');
-  const logo = quizStore.getLogo();
+  const logo = quizStore.getAsset('logo');
   if (!logo) return res.sendFile(join(PUBLIC_DIR, 'media', 'logo-white.png'));
   res.type(logo.mime).send(logo.buffer);
+});
+// תמונת הרקע המותאמת (אם הועלתה)
+app.get('/api/bg', (_req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  const bg = quizStore.getAsset('bg');
+  if (!bg) return res.status(404).end();
+  res.type(bg.mime).send(bg.buffer);
 });
 
 // --- REST API לניהול מאגרי שאלות ---

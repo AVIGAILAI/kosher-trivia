@@ -1,4 +1,4 @@
-// עיצוב משותף לכל המסכים: צבע רקע, לוגו ושם בית הספר.
+// עיצוב משותף לכל המסכים: צבע רקע או תמונת רקע, לוגו ושם בית הספר.
 // נשמר בשרת (Redis), כך שכל שינוי מופיע בכל המסכים — מסך המנחה, החדרים, פאנל המנהלת, הלוח והשלט.
 // דף שרוצה כפתור "🎨 עיצוב" מוסיף אלמנט עם data-theme-open.
 (function () {
@@ -24,12 +24,21 @@
 
   // --- החלה ---
   let styleEl = null;
-  function applyPalette(id) {
+  const bgUrl = (t) => '/api/bg?v=' + (t.bgVersion || 0);
+  // רקע: תמונה מותאמת (palette='image') עם הכהיה קלה לקריאוּת הכיתוב, אחרת מעבר צבעים
+  function backgroundCss(t) {
+    if (t.palette === 'image' && t.hasBg) {
+      const dim = t.bgDim === false ? '' : 'linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),';
+      return `background:${dim}url('${bgUrl(t)}') center/cover no-repeat fixed !important;`;
+    }
+    return `background:${gradient(paletteById(t.palette))} !important;`;
+  }
+  function applyBackground(t) {
     if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'theme-style'; document.head.appendChild(styleEl); }
-    styleEl.textContent = `body{background:${gradient(paletteById(id))} !important;}`;
+    styleEl.textContent = `body{${backgroundCss(t)}}`;
   }
   function applyAll(t) {
-    applyPalette(t.palette);
+    applyBackground(t);
     if (!document.body) return;
     document.querySelectorAll('img[data-logo]').forEach((img) => {
       const src = '/api/logo?v=' + (t.logoVersion || 0);
@@ -43,7 +52,7 @@
   }
 
   // צבע מהזיכרון המקומי מיד (בלי הבהוב של הסגול לפני שהשרת עונה)
-  try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.palette) { theme = c; applyPalette(c.palette); } } catch (e) {}
+  try { const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); if (c && c.palette) { theme = c; applyBackground(c); } } catch (e) {}
 
   function setTheme(t) {
     theme = t;
@@ -93,6 +102,19 @@
     }
     return cv.toDataURL('image/png');
   }
+  // תמונת רקע: הקטנה ל-1920 פיקסלים ודחיסת JPEG עד שנכנסת במגבלת השמירה
+  async function buildBgDataUrl(file) {
+    const img = await loadImage(file);
+    for (const [side, q] of [[1920, 0.82], [1600, 0.78], [1280, 0.72], [1024, 0.65]]) {
+      const scale = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.naturalWidth * scale)); cv.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      const jpg = cv.toDataURL('image/jpeg', q);
+      if (jpg.length < 850000) return jpg;
+    }
+    throw new Error('התמונה גדולה מדי — נסי קובץ קטן יותר');
+  }
   async function buildLogoDataUrl(file, opts) {
     const img = await loadImage(file);
     for (const side of [512, 384, 256]) {
@@ -118,7 +140,17 @@
           <p class="text-sm text-slate-500 mb-5">השינוי נשמר ומופיע בכל המסכים (מסך המנחה, החדרים, פאנל המנהלת והשלט) — מסכים פתוחים יתעדכנו תוך חצי דקה.</p>
 
           <h3 class="font-black mb-2">צבע הרקע</h3>
-          <div data-swatches class="grid grid-cols-5 gap-2 mb-6"></div>
+          <div data-swatches class="grid grid-cols-5 gap-2 mb-4"></div>
+
+          <h3 class="font-black mb-2">תמונת רקע מותאמת</h3>
+          <div class="flex flex-wrap items-center gap-2 mb-2 text-sm">
+            <label class="cursor-pointer bg-purple-600 hover:bg-purple-700 text-white font-black px-4 py-2 rounded-xl text-center">
+              🖼️ העלאת תמונת רקע<input data-bg-file type="file" accept="image/*" class="hidden" />
+            </label>
+            <button data-bg-remove class="bg-slate-100 hover:bg-slate-200 font-bold px-4 py-2 rounded-xl">🗑️ הסרת התמונה (חזרה לצבע)</button>
+          </div>
+          <label class="flex items-center gap-2 text-sm font-semibold mb-1"><input data-bg-dim type="checkbox" class="w-4 h-4" /> להכהות קצת את התמונה, כדי שהכיתוב הלבן יהיה קריא</label>
+          <p class="text-xs text-slate-500 mb-6">💡 מומלצת תמונה רחבה (לרוחב), כמו תמונה של בית הספר. היא תכסה את כל המסך.</p>
 
           <h3 class="font-black mb-2">הלוגו</h3>
           <div class="flex items-center gap-4 mb-3">
@@ -150,20 +182,27 @@
     const msg = (text, ok) => { const m = $('[data-msg]'); m.textContent = text; m.className = 'text-sm font-bold mb-4 ' + (ok ? 'text-emerald-600' : 'text-rose-600'); };
 
     function paintPreview() {
-      $('[data-preview]').style.background = gradient(paletteById(theme ? theme.palette : t.palette));
+      const cur = theme || t;
+      if (cur.palette === 'image' && cur.hasBg) {
+        $('[data-preview]').style.background = `url('${bgUrl(cur)}') center/cover`;
+      } else {
+        $('[data-preview]').style.background = gradient(paletteById(cur.palette));
+      }
       $('[data-logo-preview]').src = '/api/logo?v=' + ((theme && theme.logoVersion) || 0);
     }
     function paintSwatches() {
-      const cur = theme ? theme.palette : t.palette;
-      $('[data-swatches]').innerHTML = PALETTES.map((p) => `
-        <button data-pal="${p.id}" class="flex flex-col items-center gap-1 text-xs font-bold">
-          <span class="block w-full h-12 rounded-xl ${p.id === cur ? 'ring-4 ring-offset-2 ring-slate-800' : ''}" style="background:${gradient(p)}"></span>
-          ${p.name}
-        </button>`).join('');
+      const th = theme || t, cur = th.palette;
+      const tile = (id, name, bg) => `
+        <button data-pal="${id}" class="flex flex-col items-center gap-1 text-xs font-bold">
+          <span class="block w-full h-12 rounded-xl ${id === cur ? 'ring-4 ring-offset-2 ring-slate-800' : ''}" style="background:${bg}"></span>
+          ${name}
+        </button>`;
+      $('[data-swatches]').innerHTML = PALETTES.map((p) => tile(p.id, p.name, gradient(p))).join('') +
+        (th.hasBg ? tile('image', 'התמונה שלי', `url('${bgUrl(th)}') center/cover`) : '');
       modal.querySelectorAll('[data-pal]').forEach((b) => {
         b.onclick = async () => {
           const id = b.dataset.pal;
-          applyPalette(id);
+          applyBackground({ ...(theme || t), palette: id });
           try { setTheme(await post('/api/theme', { palette: id })); } catch (e) { msg(e.message, false); }
           paintSwatches(); paintPreview();
         };
@@ -181,7 +220,26 @@
       } catch (e) { msg(e.message, false); }
     }
 
+    async function uploadBg(file) {
+      if (!file) return;
+      msg('מעלה את תמונת הרקע…', true);
+      try {
+        setTheme(await post('/api/theme/bg', { dataUrl: await buildBgDataUrl(file) }));
+        paintSwatches(); paintPreview();
+        msg('✓ תמונת הרקע הוחלפה בכל המסכים', true);
+      } catch (e) { msg(e.message, false); }
+    }
+
     paintSwatches(); paintPreview();
+    $('[data-bg-dim]').checked = !(theme && theme.bgDim === false);
+    $('[data-bg-file]').onchange = (e) => uploadBg(e.target.files[0]);
+    $('[data-bg-remove]').onclick = async () => {
+      try { setTheme(await post('/api/theme/bg', { dataUrl: null })); paintSwatches(); paintPreview(); msg('✓ התמונה הוסרה — חזרנו לצבע', true); }
+      catch (e) { msg(e.message, false); }
+    };
+    $('[data-bg-dim]').onchange = async (e) => {
+      try { setTheme(await post('/api/theme', { bgDim: e.target.checked })); } catch (err) { msg(err.message, false); }
+    };
     $('[data-name]').value = (theme && theme.schoolName) || DEFAULT_NAME;
     $('[data-x]').onclick = () => { modal.remove(); modal = null; };
     modal.onclick = (e) => { if (e.target === modal) { modal.remove(); modal = null; } };
