@@ -62,11 +62,22 @@ const SCHOOL_CLASSES = [
   ['ya1', 'יא1'], ['ya2', 'יא2'], ['yb1', 'יב1'], ['yb2', 'יב2'],
 ];
 const CLASS_SCHEMA = 'v2-8'; // גרסת מבנה הכיתות; שינוי → מיגרציה חד-פעמית
+// הקודים הקבועים שהתלמידות מכירות (10/2026). אם מאגר הנתונים יימחק/יתאפס — הכיתות ייווצרו
+// מחדש **באותם קודים** ולא בקודים אקראיים חדשים.
+const FIXED_CODES = {
+  salon: '2299', t1: '6236', t2: '7353', y1: '8231', y2: '1741',
+  ya1: '3886', ya2: '4741', yb1: '7732', yb2: '5680',
+};
+function codeFor(id, used) {
+  const f = FIXED_CODES[id];
+  if (f && !used.has(f)) { used.add(f); return f; }
+  return genClassCode(used);
+}
 
 /** רשימת ברירת מחדל: סלון (כל בית הספר) + 8 כיתות, כל אחת עם קוד קבוע. */
 function defaultClasses() {
   const used = new Set();
-  const mk = (id, name, salon) => ({ id, name, code: genClassCode(used), salon: !!salon });
+  const mk = (id, name, salon) => ({ id, name, code: codeFor(id, used), salon: !!salon });
   return [mk('salon', 'סלון', true), ...SCHOOL_CLASSES.map(([id, name]) => mk(id, name))];
 }
 
@@ -83,15 +94,15 @@ function ensureDbShape() {
   if (db.classSchema !== CLASS_SCHEMA) {
     const salon = (db.classes || []).find((c) => c.salon);
     const used = new Set(salon ? [salon.code] : []);
-    const eight = SCHOOL_CLASSES.map(([id, name]) => ({ id, name, code: genClassCode(used), salon: false }));
-    db.classes = [salon || { id: 'salon', name: 'סלון', code: genClassCode(used), salon: true }, ...eight];
+    const eight = SCHOOL_CLASSES.map(([id, name]) => ({ id, name, code: codeFor(id, used), salon: false }));
+    db.classes = [salon || { id: 'salon', name: 'סלון', code: codeFor('salon', used), salon: true }, ...eight];
     db.classSchema = CLASS_SCHEMA;
     changed = true;
   }
   // השלמת קוד קבוע לכל כיתה שאין לה (הקוד לא משתנה לעולם — התלמידות מקישות אותו)
   const used = new Set(db.classes.map((c) => c.code).filter(Boolean));
   for (const c of db.classes) {
-    if (!c.code) { c.code = genClassCode(used); changed = true; }
+    if (!c.code) { c.code = codeFor(c.id, used); changed = true; }
   }
   return changed;
 }
