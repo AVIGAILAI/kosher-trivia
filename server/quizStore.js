@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -34,7 +34,7 @@ const redisEnabled = () => !!(REDIS_URL && REDIS_TOKEN);
 // לא נגיש רגעית בעלייה (אחרת נטען קובץ ריק ונדרוס את הרשימות/הניקוד ב-Redis).
 let redisReadOK = false;
 // שינויים שנעשו בזמן ש-Redis לא היה נגיש (נשמרו רק בזיכרון) — ימוזגו ל-Redis כשיחזור
-const offline = { touchedQuizIds: new Set(), deletedQuizIds: new Set(), rosterTouched: false, themeTouched: false, assetsTouched: new Set(), games: [] };
+const offline = { touchedQuizIds: new Set(), deletedQuizIds: new Set(), rosterTouched: false, themeTouched: false, assetsTouched: new Set(), mediaTouched: new Set(), games: [] };
 const reloadListeners = [];
 
 let db = { quizzes: [], roster: {}, classes: [], gameHistory: [], classResetAt: 0 };
@@ -92,6 +92,7 @@ function ensureDbShape() {
   if (!Array.isArray(db.gameHistory)) { db.gameHistory = []; changed = true; }
   if (typeof db.classResetAt !== 'number') { db.classResetAt = 0; changed = true; }
   if (!db.theme || typeof db.theme !== 'object') { db.theme = { ...DEFAULT_THEME }; changed = true; }
+  if (!db.mediaIndex || typeof db.mediaIndex !== 'object') { db.mediaIndex = {}; changed = true; }
   if (!Array.isArray(db.classes) || db.classes.length === 0) { db.classes = defaultClasses(); changed = true; }
   // מיגרציה חד-פעמית ל-8 הכיתות האמיתיות (שומרת את הסלון הקיים + הקוד שלו).
   if (db.classSchema !== CLASS_SCHEMA) {
@@ -233,6 +234,7 @@ function mergeOffline(remote) {
   if (offline.rosterTouched) merged.roster = { ...(merged.roster || {}), ...(db.roster || {}) };
   if (offline.games.length) merged.gameHistory = [...(merged.gameHistory || []), ...offline.games];
   if (offline.themeTouched || offline.assetsTouched.size) merged.theme = db.theme;
+  if (offline.mediaTouched.size) merged.mediaIndex = { ...(merged.mediaIndex || {}), ...(db.mediaIndex || {}) };
   return merged;
 }
 
@@ -256,7 +258,11 @@ function startReconnectLoop() {
         await loadAsset(name);
       }
     }
-    offline.touchedQuizIds.clear(); offline.rosterTouched = false; offline.themeTouched = false; offline.assetsTouched.clear(); offline.games = [];
+    for (const id of offline.mediaTouched) {
+      const m = mediaCache.get(id) || readMediaFile(id);
+      if (m) { try { await redisSet({ mime: m.mime, b64: m.buffer.toString('base64') }, MEDIA_PREFIX + id); } catch (e) { console.error('שמירת קובץ מדיה אחרי חיבור-מחדש נכשלה:', e.message); } }
+    }
+    offline.touchedQuizIds.clear(); offline.rosterTouched = false; offline.themeTouched = false; offline.assetsTouched.clear(); offline.mediaTouched.clear(); offline.games = [];
     console.log(`✅ Redis חזר — ${db.quizzes.length} מאגרים נטענו/מוזגו ונשמרו לצמיתות`);
     startHeartbeat();
     for (const fn of reloadListeners) { try { fn(); } catch (e) { console.error(e.message); } }
@@ -370,6 +376,90 @@ export function setAsset(name, dataUrl) {
   return getTheme();
 }
 
+// --- קבצי מדיה לשאלות (תמונה / הקלטה / סרטון קצר) ---
+// כל קובץ במפתח Redis משלו (`kosher-trivia:media:<id>`), כ-{ mime, b64 }. Upstash חינמי: עד 10MB
+// לבקשה ו-256MB בסך הכל — לכן קובץ עד 7MB (base64 מנפח ב-33%) וסך הכל עד 150MB.
+// קבצים נשמרים גם בזיכרון השרת (מטמון), כדי לא למשוך אותם מ-Redis בכל הצגה.
+const MEDIA_PREFIX = 'kosher-trivia:media:';
+const MEDIA_DIR = join(DATA_DIR, 'media');
+export const MEDIA_MAX_BYTES = 7 * 1024 * 1024;
+const MEDIA_TOTAL_MAX = 150 * 1024 * 1024;
+const MEDIA_CACHE_MAX = 80 * 1024 * 1024;
+const MEDIA_MIME = /^(image\/(jpeg|png|gif|webp)|audio\/(mpeg|mp3|mp4|x-m4a|m4a|aac|wav|x-wav|wave|ogg|webm)|video\/(mp4|webm|quicktime|ogg))$/;
+const mediaCache = new Map(); // id → { mime, buffer } (סדר הכנסה = LRU פשוט)
+let mediaCacheBytes = 0;
+
+function cacheMedia(id, m) {
+  if (mediaCache.has(id)) { mediaCacheBytes -= mediaCache.get(id).buffer.length; mediaCache.delete(id); }
+  mediaCache.set(id, m); mediaCacheBytes += m.buffer.length;
+  for (const [k, v] of mediaCache) {
+    if (mediaCacheBytes <= MEDIA_CACHE_MAX) break;
+    mediaCache.delete(k); mediaCacheBytes -= v.buffer.length;
+  }
+}
+function readMediaFile(id) {
+  try {
+    const p = join(MEDIA_DIR, id + '.json');
+    if (!existsSync(p)) return null;
+    const j = JSON.parse(readFileSync(p, 'utf8'));
+    return { mime: j.mime, buffer: Buffer.from(j.b64, 'base64') };
+  } catch { return null; }
+}
+
+/** שמירת קובץ מדיה חדש. מחזיר { id, url }. */
+export async function saveMedia(buffer, mime) {
+  mime = String(mime || '').split(';')[0].trim().toLowerCase();
+  if (!MEDIA_MIME.test(mime)) throw new Error('סוג קובץ לא נתמך — אפשר תמונה, הקלטה (mp3/m4a/wav) או סרטון (mp4)');
+  if (!buffer || !buffer.length) throw new Error('הקובץ ריק');
+  if (buffer.length > MEDIA_MAX_BYTES) throw new Error('הקובץ גדול מדי (עד 7MB)');
+  const used = Object.values(db.mediaIndex || {}).reduce((s, m) => s + (m.size || 0), 0);
+  if (used + buffer.length > MEDIA_TOTAL_MAX) throw new Error('המקום לקבצים מלא — מחקי קבצים משאלות ישנות, או השתמשי בקישור מגוגל דרייב');
+  const id = randomUUID().replace(/-/g, '').slice(0, 16);
+  const rec = { mime, b64: buffer.toString('base64') };
+  if (redisEnabled() && redisReadOK) await redisSet(rec, MEDIA_PREFIX + id); // ממתינים — כדי לדעת שבאמת נשמר
+  else if (isOffline()) offline.mediaTouched.add(id);
+  try { mkdirSync(MEDIA_DIR, { recursive: true }); writeFileSync(join(MEDIA_DIR, id + '.json'), JSON.stringify(rec)); } catch (e) { console.warn('גיבוי מדיה מקומי נכשל:', e.message); }
+  cacheMedia(id, { mime, buffer });
+  db.mediaIndex[id] = { mime, size: buffer.length, createdAt: Date.now() };
+  save();
+  return { id, url: '/api/media/' + id };
+}
+
+/** קובץ מדיה לפי מזהה: { mime, buffer } או null. */
+export async function getMedia(id) {
+  if (!/^[a-f0-9]{16}$/.test(String(id))) return null;
+  const hit = mediaCache.get(id);
+  if (hit) { cacheMedia(id, hit); return hit; }
+  let m = null;
+  if (redisEnabled() && redisReadOK) {
+    try { const r = await redisGet(MEDIA_PREFIX + id); if (r && r.b64) m = { mime: r.mime, buffer: Buffer.from(r.b64, 'base64') }; }
+    catch (e) { console.error('טעינת מדיה מ-Redis נכשלה:', e.message); }
+  }
+  if (!m) m = readMediaFile(id);
+  if (m) cacheMedia(id, m);
+  return m;
+}
+
+/** מחיקת קבצים שאף שאלה כבר לא משתמשת בהם (רק אחרי יום — כדי לא למחוק קובץ שהועלה ועוד לא נשמר). */
+function gcMedia() {
+  const used = new Set();
+  for (const q of db.quizzes) for (const qq of q.questions || []) {
+    const m = /\/api\/media\/([a-f0-9]{16})/.exec((qq.media && qq.media.url) || '');
+    if (m) used.add(m[1]);
+  }
+  const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  for (const [id, info] of Object.entries(db.mediaIndex || {})) {
+    if (used.has(id) || (info.createdAt || 0) > dayAgo) continue;
+    delete db.mediaIndex[id];
+    const c = mediaCache.get(id); if (c) { mediaCacheBytes -= c.buffer.length; mediaCache.delete(id); }
+    try { unlinkSync(join(MEDIA_DIR, id + '.json')); } catch { /* אין גיבוי מקומי */ }
+    if (redisEnabled() && redisReadOK) {
+      fetch(`${REDIS_URL}/del/${MEDIA_PREFIX + id}`, { method: 'POST', headers: { Authorization: `Bearer ${REDIS_TOKEN}` } })
+        .catch((e) => console.error('מחיקת מדיה מ-Redis נכשלה:', e.message));
+    }
+  }
+}
+
 // --- API ציבורי ---
 
 export function listQuizzes() {
@@ -398,6 +488,7 @@ export function updateQuiz(id, { name, questions } = {}) {
   if (typeof name === 'string') quiz.name = name.slice(0, 60);
   if (Array.isArray(questions)) quiz.questions = questions.map(sanitizeQuestion);
   if (isOffline()) offline.touchedQuizIds.add(quiz.id);
+  gcMedia();
   save();
   return quiz;
 }
@@ -407,6 +498,7 @@ export function deleteQuiz(id) {
   const idx = db.quizzes.findIndex((q) => q.id === id);
   if (idx === -1) return false;
   db.quizzes.splice(idx, 1);
+  gcMedia();
   save();
   return true;
 }

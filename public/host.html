@@ -24,6 +24,7 @@
     .pin-badge { background:#fff; color:#5a2c7d; }
   </style>
   <script src="/theme.js"></script>
+  <script src="/media-render.js"></script>
 </head>
 <body class="text-slate-800 p-4 md:p-8">
   <div class="max-w-5xl mx-auto">
@@ -442,7 +443,12 @@
       }
 
       // צליל מתח: פועל רק בשלב השאלה
-      if(phase === 'question' && lastPhase !== 'question'){ startSuspense(); }
+      // (לא מעל סרטון/הקלטה של השאלה — שלא יתנגשו)
+      if(phase === 'question'){
+        const mediaSound = g.question && TriviaMedia.hasSound(g.question.media);
+        if(mediaSound) stopSuspense();
+        else if(lastPhase !== 'question' || suspenseAudio.paused) startSuspense();
+      }
       if(phase !== 'question'){ stopSuspense(); }
       if(phase === 'reveal' && lastPhase !== 'reveal'){ chime(); }
 
@@ -482,18 +488,13 @@
         document.getElementById('qCategory').innerText = g.question.category;
         document.getElementById('qText').innerText = g.question.text;
         // מדיה (תמונה/סרטון) — מוצגת רק כאן במסך המנחה
+        // בונים מחדש רק כשהשאלה משתנה — אחרת הסרטון/ההקלטה היו מתחילים מחדש בכל עדכון
         const mediaEl = document.getElementById('qMedia');
         const m = g.question.media;
-        if(m && m.url){
-          if(m.type === 'video'){
-            mediaEl.innerHTML = `<video src="${escapeHtml(m.url)}" class="max-h-72 rounded-2xl shadow-lg" controls autoplay muted loop playsinline></video>`;
-          } else if(m.type === 'audio'){
-            mediaEl.innerHTML = `<div class="bg-purple-50 rounded-2xl p-5 shadow"><div class="text-4xl mb-2">🎧</div><audio src="${escapeHtml(m.url)}" controls autoplay class="w-72"></audio></div>`;
-          } else {
-            mediaEl.innerHTML = `<img src="${escapeHtml(m.url)}" class="max-h-72 rounded-2xl shadow-lg" alt="" />`;
-          }
-        } else {
-          mediaEl.innerHTML = '';
+        const mKey = m && m.url ? (g.questionNumber + '|' + m.type + '|' + m.url) : '';
+        if(mediaEl.dataset.key !== mKey){
+          mediaEl.dataset.key = mKey;
+          mediaEl.innerHTML = TriviaMedia.html(m, { size:'host' });
         }
         document.getElementById('qOptions').innerHTML = g.question.options.map((opt,i) =>
           `<div class="glass p-5 rounded-2xl flex items-center shadow-lg">

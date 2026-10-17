@@ -71,6 +71,31 @@ app.get('/api/bg', (_req, res) => {
   res.type(bg.mime).send(bg.buffer);
 });
 
+// --- קבצי מדיה לשאלות: העלאה (גוף בינארי, Content-Type = סוג הקובץ) והצגה ---
+app.post('/api/media', express.raw({ type: () => true, limit: quizStore.MEDIA_MAX_BYTES + 1024 }), async (req, res) => {
+  try { res.json(await quizStore.saveMedia(req.body, req.headers['content-type'])); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.get('/api/media/:id', async (req, res) => {
+  const m = await quizStore.getMedia(req.params.id);
+  if (!m) return res.status(404).end();
+  res.set('Cache-Control', 'public, max-age=31536000, immutable'); // מזהה חדש לכל קובץ — אפשר לשמור במטמון לתמיד
+  res.set('Accept-Ranges', 'bytes');
+  res.type(m.mime);
+  // תמיכה בבקשות חלקיות (Range) — נדרש לסרטונים באייפון ולדילוג בהקלטה
+  const total = m.buffer.length;
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (range && (range[1] || range[2])) {
+    let start = range[1] ? Number(range[1]) : total - Number(range[2]);
+    let end = range[1] && range[2] ? Number(range[2]) : total - 1;
+    start = Math.max(0, start); end = Math.min(end, total - 1);
+    if (start > end) return res.status(416).set('Content-Range', `bytes */${total}`).end();
+    res.status(206).set('Content-Range', `bytes ${start}-${end}/${total}`);
+    return res.send(m.buffer.subarray(start, end + 1));
+  }
+  res.send(m.buffer);
+});
+
 // --- REST API לניהול מאגרי שאלות ---
 app.get('/api/quizzes', (_req, res) => res.json(quizStore.listQuizzes()));
 app.get('/api/quizzes/:id', (req, res) => {
@@ -256,7 +281,7 @@ function masterState() {
       phase: g.phase, questionNumber: g.questionNumber, totalQuestions: g.totalQuestions,
       players: hs.players.length, classTotal, quizName: g.quizName || '',
       // נתוני השאלה הנוכחית — כדי שהמנהלת תראה בעצמה מה מוצג + הזמן שרץ
-      question: g.question ? { text: g.question.text, options: g.question.options } : null,
+      question: g.question ? { text: g.question.text, options: g.question.options, media: g.question.media || null } : null,
       timeLeft: g.timeLeft, timeLimit: g.timeLimit, answersCount: g.answersCount,
       correct: (g.phase === 'reveal') ? g.correct : null,
     };

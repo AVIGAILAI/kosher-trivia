@@ -12,6 +12,7 @@
     .glass { background:rgba(255,255,255,.96); box-shadow:0 20px 40px rgba(0,0,0,.15); }
   </style>
   <script src="/theme.js"></script>
+  <script src="/media-render.js"></script>
 </head>
 <body class="p-4 md:p-8 text-white">
   <div class="max-w-5xl mx-auto">
@@ -129,7 +130,9 @@
         $('prReveal').innerText = 'התשובה הנכונה: ' + (opts[rep.correct]!=null?opts[rep.correct]:'');
       } else {
         $('prReveal').classList.add('hidden');
-        if(suspenseAudio.paused) playSuspense(); // מנגינת מתח בזמן שאלה
+        // מנגינת מתח בזמן שאלה — אבל לא מעל סרטון/הקלטה של השאלה
+        if(TriviaMedia.hasSound(rep.question.media)) stopSuspense();
+        else if(suspenseAudio.paused) playSuspense();
         // סנכרון הטיימר לזמן שהשרת דיווח, וספירה-לאחור חלקה מקומית
         timerLeft = rep.timeLeft || 0; paintTimer();
         stopTimer();

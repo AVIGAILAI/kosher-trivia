@@ -15,6 +15,7 @@
     .qnum { background:#118AB2; }
   </style>
   <script src="/theme.js"></script>
+  <script src="/media-render.js"></script>
 </head>
 <body class="p-3 md:p-6 text-slate-800">
   <div class="max-w-6xl mx-auto">
@@ -214,17 +215,166 @@
               <input class="f-opt flex-1 bg-transparent font-bold" value="${escapeAttr(opt)}" placeholder="תשובה ${LETTERS[oi]}" />
             </label>`).join('')}
         </div>
-        <div class="flex items-center gap-2 mt-3 flex-wrap">
-          <label class="text-xs text-slate-500 font-bold">🖼️ מדיה (מוצג רק במסך המנחה):</label>
-          <select class="f-media-type bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold">
-            <option value="" ${!q.media ? 'selected' : ''}>ללא</option>
-            <option value="image" ${q.media && q.media.type === 'image' ? 'selected' : ''}>תמונה</option>
-            <option value="video" ${q.media && q.media.type === 'video' ? 'selected' : ''}>סרטון</option>
-            <option value="audio" ${q.media && q.media.type === 'audio' ? 'selected' : ''}>הקלטה/אודיו</option>
-          </select>
-          <input class="f-media-url flex-1 min-w-[200px] bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm" placeholder="כתובת קובץ תמונה/סרטון (URL)" value="${q.media ? escapeAttr(q.media.url) : ''}" />
+        <div class="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-600 font-black">🖼️ תמונה / הקלטה / סרטון לשאלה:</span>
+            <select class="f-media-type bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-bold">
+              <option value="" ${!q.media ? 'selected' : ''}>ללא</option>
+              <option value="image" ${q.media && q.media.type === 'image' ? 'selected' : ''}>תמונה</option>
+              <option value="video" ${q.media && q.media.type === 'video' ? 'selected' : ''}>סרטון</option>
+              <option value="audio" ${q.media && q.media.type === 'audio' ? 'selected' : ''}>הקלטה/אודיו</option>
+            </select>
+            <label class="cursor-pointer bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-sm">📤 העלאה מהמחשב<input type="file" class="f-media-file hidden" accept="image/*,audio/*,video/*,.m4a,.mp3,.wav,.mp4" /></label>
+            <button type="button" class="f-media-rec bg-rose-500 hover:bg-rose-600 text-white font-bold px-3 py-1.5 rounded-lg text-sm">🎙️ הקלטה</button>
+            <button type="button" class="f-media-clear ${q.media ? '' : 'hidden'} bg-white border border-slate-200 hover:bg-slate-100 font-bold px-3 py-1.5 rounded-lg text-sm">✕ הסרה</button>
+          </div>
+          <input class="f-media-url w-full mt-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm" dir="ltr" placeholder="או הדביקי קישור: גוגל דרייב / יוטיוב / קישור לקובץ" value="${q.media ? escapeAttr(q.media.url) : ''}" />
+          <p class="f-media-status text-xs font-bold mt-1 text-slate-500">${mediaHint(q.media)}</p>
+          <div class="f-media-preview mt-2 text-center">${q.media ? TriviaMedia.html(q.media, { size:'preview' }) : ''}</div>
         </div>
       </div>`;
+    }
+
+
+    // ===== מדיה לשאלה: העלאה מהמחשב, הקלטה מהמיקרופון, או קישור (דרייב / יוטיוב) =====
+    const MEDIA_MAX = 7 * 1024 * 1024; // מגבלת השרת לקובץ (Upstash חינמי)
+    const BIG_FILE_TIP = 'לסרטון ארוך: העלי אותו לגוגל דרייב ← לחצי "שיתוף" ← "כל מי שיש לו את הקישור" ← העתיקי את הקישור והדביקי אותו כאן.';
+    function mediaHint(media){
+      if(!media || !media.url) return 'אפשר להעלות קובץ מהמחשב (עד 7MB), להקליט, או להדביק קישור מדרייב / יוטיוב. מוצג במסך המנחה ובמסכי המשתתפות בדפדפן (בטלפון כשר אין תצוגה).';
+      const src = TriviaMedia.parse(media.url);
+      if(src.kind === 'drive') return '✓ קישור מגוגל דרייב. אם לא רואים תצוגה למטה — ודאי שהקובץ משותף ל"כל מי שיש לו את הקישור".';
+      if(src.kind === 'youtube') return '✓ סרטון יוטיוב — יתנגן במסך המנחה.';
+      if(media.url.startsWith('/api/media/')) return '✓ הקובץ שמור במערכת.';
+      return 'קישור ישיר לקובץ.';
+    }
+    function typeOfFile(file){
+      const t = (file.type || '').toLowerCase(), n = (file.name || '').toLowerCase();
+      if(t.startsWith('image/')) return 'image';
+      if(t.startsWith('video/') || /\.(mp4|mov|webm)$/.test(n)) return 'video';
+      if(t.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|aac)$/.test(n)) return 'audio';
+      return '';
+    }
+    function mimeOfFile(file){
+      if(file.type) return file.type;
+      const n = (file.name || '').toLowerCase();
+      if(n.endsWith('.m4a')) return 'audio/mp4';
+      if(n.endsWith('.mp3')) return 'audio/mpeg';
+      if(n.endsWith('.wav')) return 'audio/wav';
+      if(n.endsWith('.mp4')) return 'video/mp4';
+      if(n.endsWith('.mov')) return 'video/quicktime';
+      return 'application/octet-stream';
+    }
+    // תמונה גדולה מוקטנת ונדחסת בדפדפן (טלפונים מצלמים 4-10MB) — כך היא נכנסת במגבלה ונטענת מהר
+    function shrinkImage(file){
+      return new Promise((resolve)=>{
+        if(file.size < 900*1024 || file.type === 'image/gif'){ resolve(file); return; }
+        const url = URL.createObjectURL(file), img = new Image();
+        img.onload = ()=>{
+          URL.revokeObjectURL(url);
+          const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(img.naturalWidth*scale); cv.height = Math.round(img.naturalHeight*scale);
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          cv.toBlob((b)=> resolve(b || file), 'image/jpeg', 0.85);
+        };
+        img.onerror = ()=>{ URL.revokeObjectURL(url); resolve(file); };
+        img.src = url;
+      });
+    }
+    async function uploadMedia(blob, mime){
+      const r = await fetch('/api/media', { method:'POST', headers:{ 'Content-Type': mime }, body: blob });
+      const data = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(data.error || ('שגיאה ' + r.status));
+      return data.url;
+    }
+
+    let recState = null; // הקלטה פעילה: { rec, stream, chunks, btn, timer }
+    function bindMediaEvents(card, i){
+      const mType = card.querySelector('.f-media-type');
+      const mUrl = card.querySelector('.f-media-url');
+      const status = card.querySelector('.f-media-status');
+      const preview = card.querySelector('.f-media-preview');
+      const clearBtn = card.querySelector('.f-media-clear');
+      const recBtn = card.querySelector('.f-media-rec');
+      const say = (text, kind)=>{ status.innerText = text; status.className = 'f-media-status text-xs font-bold mt-1 ' + (kind==='err' ? 'text-rose-600' : kind==='ok' ? 'text-emerald-600' : 'text-slate-500'); };
+      const apply = (media)=>{
+        current.questions[i].media = media;
+        mType.value = media ? media.type : '';
+        mUrl.value = media ? media.url : '';
+        preview.innerHTML = media ? TriviaMedia.html(media, { size:'preview' }) : '';
+        clearBtn.classList.toggle('hidden', !media);
+        setDirty(true);
+      };
+      const fromInputs = ()=>{
+        let t = mType.value; const u = mUrl.value.trim();
+        if(u && !t){ t = TriviaMedia.parse(u).kind === 'youtube' ? 'video' : 'image'; mType.value = t; }
+        const media = (t && u) ? { type:t, url:u } : null;
+        current.questions[i].media = media;
+        preview.innerHTML = media ? TriviaMedia.html(media, { size:'preview' }) : '';
+        clearBtn.classList.toggle('hidden', !media);
+        say(mediaHint(media));
+        setDirty(true);
+      };
+      mType.onchange = fromInputs;
+      mUrl.onchange = fromInputs;
+      mUrl.oninput = ()=>{ clearTimeout(mUrl._t); mUrl._t = setTimeout(fromInputs, 600); };
+      clearBtn.onclick = ()=>{ apply(null); say(mediaHint(null)); };
+
+      // העלאה ושמירה מיידית של המאגר — כדי שהקובץ לא ילך לאיבוד אם שוכחים ללחוץ "שמור"
+      const doUpload = async (blob, mime, type, label)=>{
+        if(blob.size > MEDIA_MAX){
+          say(`הקובץ גדול מדי (${(blob.size/1024/1024).toFixed(1)}MB, עד 7MB). ` + BIG_FILE_TIP, 'err');
+          return;
+        }
+        say(`מעלה ${label}… (${(blob.size/1024/1024).toFixed(1)}MB)`);
+        try {
+          const url = await uploadMedia(blob, mime);
+          apply({ type, url });
+          say('✓ הועלה ונשמר', 'ok');
+          $('btnSave').click();
+        } catch(e){ say('ההעלאה נכשלה: ' + e.message, 'err'); }
+      };
+      card.querySelector('.f-media-file').onchange = async (e)=>{
+        const file = e.target.files[0]; e.target.value = '';
+        if(!file) return;
+        const type = typeOfFile(file);
+        if(!type){ say('סוג קובץ לא נתמך — אפשר תמונה, הקלטה או סרטון', 'err'); return; }
+        if(type === 'image'){
+          const b = await shrinkImage(file);
+          await doUpload(b, b.type || mimeOfFile(file), 'image', 'תמונה');
+        } else {
+          await doUpload(file, mimeOfFile(file), type, type === 'video' ? 'סרטון' : 'הקלטה');
+        }
+      };
+
+      // הקלטה ישירה מהמיקרופון
+      recBtn.onclick = async ()=>{
+        if(recState && recState.btn === recBtn){ recState.rec.stop(); return; } // עצירה
+        if(recState){ say('כבר מקליטים בשאלה אחרת — עצרי אותה קודם', 'err'); return; }
+        if(!navigator.mediaDevices || !window.MediaRecorder){ say('הדפדפן הזה לא תומך בהקלטה — נסי כרום', 'err'); return; }
+        let stream;
+        try { stream = await navigator.mediaDevices.getUserMedia({ audio:true }); }
+        catch(e){ say('אין גישה למיקרופון — אשרי גישה בדפדפן ונסי שוב', 'err'); return; }
+        const mime = ['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+        const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+        const chunks = [];
+        const started = Date.now();
+        rec.ondataavailable = (ev)=>{ if(ev.data && ev.data.size) chunks.push(ev.data); };
+        rec.onstop = async ()=>{
+          clearInterval(recState.timer); stream.getTracks().forEach(t=>t.stop()); recState = null;
+          recBtn.innerText = '🎙️ הקלטה';
+          const type = (rec.mimeType || mime || 'audio/webm').split(';')[0];
+          await doUpload(new Blob(chunks, { type }), type, 'audio', 'הקלטה');
+        };
+        rec.start();
+        recState = { rec, stream, btn: recBtn, timer: setInterval(()=>{
+          const s = Math.floor((Date.now()-started)/1000);
+          recBtn.innerText = `⏹️ עצירה (${Math.floor(s/60)}:${String(s%60).padStart(2,'0')})`;
+          if(s >= 300) rec.stop(); // עד 5 דקות
+        }, 500) };
+        recBtn.innerText = '⏹️ עצירה (0:00)';
+        say('🔴 מקליטה… לחצי "עצירה" בסיום');
+      };
     }
 
     function bindQuestionEvents(){
@@ -247,15 +397,7 @@
           }
           renderQuestions(); setDirty(true);
         };
-        const mType = card.querySelector('.f-media-type');
-        const mUrl = card.querySelector('.f-media-url');
-        const updateMedia = ()=>{
-          const t = mType.value, u = mUrl.value.trim();
-          current.questions[i].media = (t && u) ? { type:t, url:u } : null;
-          setDirty(true);
-        };
-        mType.onchange = updateMedia;
-        mUrl.oninput = updateMedia;
+        bindMediaEvents(card, i);
         // הזזת השאלה למקום אחר
         card.querySelector('.f-up').onclick = ()=> moveQuestion(i, i-1);
         card.querySelector('.f-down').onclick = ()=> moveQuestion(i, i+1);

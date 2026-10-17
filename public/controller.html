@@ -14,6 +14,7 @@
     .opt-btn{transition:transform .1s} .opt-btn:active{transform:scale(.95)}
   </style>
   <script src="/theme.js"></script>
+  <script src="/media-render.js"></script>
 </head>
 <body class="p-4 flex flex-col min-h-screen">
   <div class="max-w-md w-full mx-auto flex-1 flex flex-col justify-center">
@@ -175,15 +176,7 @@
       if(key === mediaKey) return; // אין שינוי — לא נוגעים בנגן
       mediaKey = key;
       if(!media || !media.url){ box.innerHTML=''; box.classList.add('hidden'); return; }
-      const url = media.url;
-      let html = '';
-      if(media.type === 'image'){
-        html = `<img src="${url}" class="w-full max-h-56 object-contain bg-black" alt="" />`;
-      } else if(media.type === 'video'){
-        html = `<video src="${url}" class="w-full max-h-56 bg-black" playsinline autoplay muted loop controls></video>`;
-      } else if(media.type === 'audio'){
-        html = `<div class="p-3"><audio src="${url}" class="w-full" controls autoplay></audio></div>`;
-      }
+      const html = `<div class="p-2 text-center">${TriviaMedia.html(media, { size:'player', muted:true })}</div>`;
       box.innerHTML = html;
       box.classList.toggle('hidden', !html);
     }
